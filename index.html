@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Budget Tracker</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card-bg: #ffffff;
+      --primary: #2563eb;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --success: #16a34a;
+      --danger: #dc2626;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding-bottom: 70px; }
+
+    header {
+      background: var(--card-bg);
+      padding: 1rem;
+      border-bottom: 1px solid var(--border);
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    main { max-width: 500px; margin: 1rem auto; padding: 0 1rem; }
+
+    .card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      border: 1px solid var(--border);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .card h2 { font-size: 1.1rem; margin-bottom: 1rem; color: var(--text-muted); }
+
+    /* Form Styles */
+    .form-group { margin-bottom: 1rem; }
+    label { display: block; font-size: 0.875rem; font-weight: 600; margin-bottom: 0.35rem; }
+    input, select, textarea {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 1rem;
+      background: #fafafa;
+    }
+    input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); background: #fff; }
+
+    .btn {
+      width: 100%;
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 0.85rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:active { opacity: 0.9; }
+
+    /* Summary Metrics */
+    .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem; }
+    .metric-card { background: var(--card-bg); padding: 1rem; border-radius: 12px; border: 1px solid var(--border); text-align: center; }
+    .metric-val { font-size: 1.25rem; font-weight: 700; margin-top: 0.25rem; }
+    .income { color: var(--success); }
+    .expense { color: var(--danger); }
+
+    /* Category Budget Bar */
+    .cat-row { margin-bottom: 1rem; }
+    .cat-header { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 0.35rem; }
+    .progress-bg { background: #e2e8f0; height: 10px; border-radius: 5px; overflow: hidden; }
+    .progress-fill { background: var(--primary); height: 100%; width: 0%; transition: width 0.3s ease; }
+    .over-budget { background: var(--danger); }
+
+    /* Navigation */
+    nav {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: var(--card-bg);
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-around;
+      padding: 0.75rem 0;
+    }
+    nav button {
+      background: none; border: none; font-size: 0.9rem; color: var(--text-muted); cursor: pointer; font-weight: 600;
+    }
+    nav button.active { color: var(--primary); }
+
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1 id="app-title" style="font-size: 1.25rem;">Log Transaction</h1>
+  </header>
+
+  <main>
+    <!-- VIEW 1: LOG EXPENSE / INCOME -->
+    <section id="view-log">
+      <form id="tx-form" class="card">
+        <div class="form-group">
+          <label for="tx-type">Type</label>
+          <select id="tx-type" required>
+            <option value="Expense">Expense</option>
+            <option value="Income">Income</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="tx-amount">Amount ($)</label>
+          <input type="number" id="tx-amount" step="0.01" placeholder="0.00" required />
+        </div>
+
+        <div class="form-group">
+          <label for="tx-category">Category</label>
+          <select id="tx-category" required>
+            <option value="Groceries">Groceries</option>
+            <option value="Utilities">Utilities</option>
+            <option value="Dining Out">Dining Out</option>
+            <option value="Entertainment">Entertainment</option>
+            <option value="Income">Income</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="tx-date">Date</label>
+          <input type="date" id="tx-date" required />
+        </div>
+
+        <div class="form-group">
+          <label for="tx-user">Logged By</label>
+          <select id="tx-user">
+            <option value="Partner A">Partner A</option>
+            <option value="Partner B">Partner B</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="tx-note">Note (Optional)</label>
+          <input type="text" id="tx-note" placeholder="e.g. Shopper's Drug Mart - milk" />
+        </div>
+
+        <button type="submit" class="btn">Save Entry</button>
+      </form>
+    </section>
+
+    <!-- VIEW 2: MONTHLY OVERVIEW -->
+    <section id="view-dashboard" class="hidden">
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div style="font-size: 0.8rem; color: var(--text-muted);">Spent This Month</div>
+          <div id="total-spent" class="metric-val expense">$0.00</div>
+        </div>
+        <div class="metric-card">
+          <div style="font-size: 0.8rem; color: var(--text-muted);">Income This Month</div>
+          <div id="total-income" class="metric-val income">$0.00</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Category Budgets</h2>
+        <div id="category-progress-list">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Bottom Navigation -->
+  <nav>
+    <button id="nav-log" class="active" onclick="switchView('log')">+ Log</button>
+    <button id="nav-dash" onclick="switchView('dash')">📊 Overview</button>
+  </nav>
+
+  <script>
+    // Set default date input to today
+    document.getElementById('tx-date').valueAsDate = new Date();
+
+    // Sample Local Storage setup to simulate your Google Sheets data structure
+    const sampleBudgets = {
+      "Groceries": 800,
+      "Utilities": 250,
+      "Dining Out": 200,
+      "Entertainment": 150
+    };
+
+    let transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+
+    // Form Submit Handler
+    document.getElementById('tx-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      const entry = {
+        type: document.getElementById('tx-type').value,
+        amount: parseFloat(document.getElementById('tx-amount').value),
+        category: document.getElementById('tx-category').value,
+        date: document.getElementById('tx-date').value,
+        user: document.getElementById('tx-user').value,
+        note: document.getElementById('tx-note').value
+      };
+
+      transactions.push(entry);
+      localStorage.setItem('transactions', JSON.stringify(transactions));
+
+      alert('Transaction logged!');
+      e.target.reset();
+      document.getElementById('tx-date').valueAsDate = new Date();
+      renderDashboard();
+    });
+
+    // View Navigation Logic
+    function switchView(view) {
+      const logSec = document.getElementById('view-log');
+      const dashSec = document.getElementById('view-dashboard');
+      const navLog = document.getElementById('nav-log');
+      const navDash = document.getElementById('nav-dash');
+      const title = document.getElementById('app-title');
+
+      if (view === 'log') {
+        logSec.classList.remove('hidden');
+        dashSec.classList.add('hidden');
+        navLog.classList.add('active');
+        navDash.classList.remove('active');
+        title.textContent = 'Log Transaction';
+      } else {
+        logSec.classList.add('hidden');
+        dashSec.classList.remove('hidden');
+        navLog.classList.remove('active');
+        navDash.classList.add('active');
+        title.textContent = 'Monthly Overview';
+        renderDashboard();
+      }
+    }
+
+    // Calculate and Render Dashboard
+    function renderDashboard() {
+      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+      let spentSum = 0;
+      let incomeSum = 0;
+      const catTotals = {};
+
+      // Initialize categories
+      Object.keys(sampleBudgets).forEach(cat => catTotals[cat] = 0);
+
+      // Filter and sum entries for current month
+      transactions.filter(t => t.date.startsWith(currentMonth)).forEach(t => {
+        if (t.type === 'Expense') {
+          spentSum += t.amount;
+          if (catTotals[t.category] !== undefined) {
+            catTotals[t.category] += t.amount;
+          }
+        } else if (t.type === 'Income') {
+          incomeSum += t.amount;
+        }
+      });
+
+      document.getElementById('total-spent').textContent = `$${spentSum.toFixed(2)}`;
+      document.getElementById('total-income').textContent = `$${incomeSum.toFixed(2)}`;
+
+      // Render Category Progress Bars
+      const container = document.getElementById('category-progress-list');
+      container.innerHTML = '';
+
+      Object.entries(sampleBudgets).forEach(([cat, budget]) => {
+        const spent = catTotals[cat] || 0;
+        const percent = Math.min((spent / budget) * 100, 100);
+        const isOver = spent > budget;
+
+        const html = `
+          <div class="cat-row">
+            <div class="cat-header">
+              <span><strong>${cat}</strong></span>
+              <span>$${spent.toFixed(0)} / $${budget}</span>
+            </div>
+            <div class="progress-bg">
+              <div class="progress-fill ${isOver ? 'over-budget' : ''}" style="width: ${percent}%;"></div>
+            </div>
+          </div>
+        `;
+        container.insertAdjacentHTML('beforeend', html);
+      });
+    }
+  </script>
+</body>
+</html>
