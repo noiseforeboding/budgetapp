@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Budget Tracker</title>
+  <title>Shared Budget Tracker</title>
   <style>
     :root {
       --bg: #f4f6f8;
@@ -27,6 +27,19 @@
       position: sticky;
       top: 0;
       z-index: 10;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    header h1 { font-size: 1.1rem; }
+
+    .icon-btn {
+      background: none;
+      border: none;
+      font-size: 1.2rem;
+      cursor: pointer;
+      color: var(--text-muted);
     }
 
     main { max-width: 500px; margin: 1rem auto; padding: 0 1rem; }
@@ -40,12 +53,12 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
 
-    .card h2 { font-size: 1.1rem; margin-bottom: 1rem; color: var(--text-muted); }
+    .card h2 { font-size: 1rem; margin-bottom: 1rem; color: var(--text-muted); }
 
     /* Form Styles */
     .form-group { margin-bottom: 1rem; }
     label { display: block; font-size: 0.875rem; font-weight: 600; margin-bottom: 0.35rem; }
-    input, select, textarea {
+    input, select {
       width: 100%;
       padding: 0.75rem;
       border: 1px solid var(--border);
@@ -53,7 +66,7 @@
       font-size: 1rem;
       background: #fafafa;
     }
-    input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); background: #fff; }
+    input:focus, select:focus { outline: 2px solid var(--primary); background: #fff; }
 
     .btn {
       width: 100%;
@@ -66,7 +79,7 @@
       font-weight: 600;
       cursor: pointer;
     }
-    .btn:active { opacity: 0.9; }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
     /* Summary Metrics */
     .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem; }
@@ -81,6 +94,17 @@
     .progress-bg { background: #e2e8f0; height: 10px; border-radius: 5px; overflow: hidden; }
     .progress-fill { background: var(--primary); height: 100%; width: 0%; transition: width 0.3s ease; }
     .over-budget { background: var(--danger); }
+
+    /* Status Banner */
+    .status-banner {
+      background: #eff6ff;
+      color: #1e40af;
+      padding: 0.5rem;
+      font-size: 0.8rem;
+      text-align: center;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+    }
 
     /* Navigation */
     nav {
@@ -103,10 +127,14 @@
 <body>
 
   <header>
-    <h1 id="app-title" style="font-size: 1.25rem;">Log Transaction</h1>
+    <div style="width: 24px;"></div> <!-- Placeholder to balance header -->
+    <h1 id="app-title">Log Transaction</h1>
+    <button class="icon-btn" title="Refresh Data" onclick="loadDataFromSheet()">🔄</button>
   </header>
 
   <main>
+    <div id="status-msg" class="status-banner hidden">Loading latest sheet data...</div>
+
     <!-- VIEW 1: LOG EXPENSE / INCOME -->
     <section id="view-log">
       <form id="tx-form" class="card">
@@ -126,11 +154,7 @@
         <div class="form-group">
           <label for="tx-category">Category</label>
           <select id="tx-category" required>
-            <option value="Groceries">Groceries</option>
-            <option value="Utilities">Utilities</option>
-            <option value="Dining Out">Dining Out</option>
-            <option value="Entertainment">Entertainment</option>
-            <option value="Income">Income</option>
+            <option value="" disabled selected>Loading categories...</option>
           </select>
         </div>
 
@@ -149,10 +173,10 @@
 
         <div class="form-group">
           <label for="tx-note">Note (Optional)</label>
-          <input type="text" id="tx-note" placeholder="e.g. Shopper's Drug Mart - milk" />
+          <input type="text" id="tx-note" placeholder="e.g. Shoppers - protein powder" />
         </div>
 
-        <button type="submit" class="btn">Save Entry</button>
+        <button type="submit" id="submit-btn" class="btn">Save Entry</button>
       </form>
     </section>
 
@@ -172,7 +196,7 @@
       <div class="card">
         <h2>Category Budgets</h2>
         <div id="category-progress-list">
-          <!-- Dynamically populated -->
+          <p style="color: var(--text-muted); font-size: 0.9rem;">Loading budgets...</p>
         </div>
       </div>
     </section>
@@ -185,22 +209,87 @@
   </nav>
 
   <script>
+    // -------------------------------------------------------------
+    // REPLACE THIS WITH YOUR GOOGLE APPS SCRIPT WEB APP URL
+    // -------------------------------------------------------------
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyulEmg-gesuCE_5S4jeeOr0kXk2-YZmrTietxFd0mXyAW-NnAhVmBfoIioyr1Dex7rEg/exec";
+
     // Set default date input to today
     document.getElementById('tx-date').valueAsDate = new Date();
 
-    // Sample Local Storage setup to simulate your Google Sheets data structure
-    const sampleBudgets = {
-      "Groceries": 800,
-      "Utilities": 250,
-      "Dining Out": 200,
-      "Entertainment": 150
-    };
+    let budgets = {};
+    let transactions = [];
 
-    let transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+    const statusMsg = document.getElementById('status-msg');
 
-    // Form Submit Handler
-    document.getElementById('tx-form').addEventListener('submit', (e) => {
+    function showStatus(text, duration = 3000) {
+      statusMsg.textContent = text;
+      statusMsg.classList.remove('hidden');
+      if (duration > 0) {
+        setTimeout(() => statusMsg.classList.add('hidden'), duration);
+      }
+    }
+
+    // 1. Fetch Data from Google Sheets
+    async function loadDataFromSheet() {
+      if (!SCRIPT_URL || SCRIPT_URL.includes("YOUR_DEPLOYED_WEB_APP_URL_HERE")) {
+        showStatus("⚠️ Please add your Apps Script URL to index.html", 0);
+        return;
+      }
+
+      showStatus("Syncing with Google Sheets...", 0);
+
+      try {
+        const response = await fetch(SCRIPT_URL);
+        const result = await response.json();
+
+        if (result.status === 'success') {
+          transactions = result.transactions || [];
+          budgets = result.budgets || {};
+          
+          populateCategoryDropdown();
+          renderDashboard();
+          showStatus("✅ Synced with Google Sheets");
+        } else {
+          showStatus("❌ Error reading sheet data");
+        }
+      } catch (err) {
+        console.error("Fetch error:", err);
+        showStatus("⚠️ Connection error. Couldn't fetch data.", 4000);
+      }
+    }
+
+    // Populate Category Dropdown dynamically from fetched Budgets
+    function populateCategoryDropdown() {
+      const select = document.getElementById('tx-category');
+      select.innerHTML = '';
+
+      const categories = Object.keys(budgets);
+      if (categories.length === 0) {
+        select.innerHTML = '<option value="">No categories found</option>';
+        return;
+      }
+
+      categories.forEach(cat => {
+        const opt = document.createElement('option');
+        opt.value = cat;
+        opt.textContent = cat;
+        select.appendChild(opt);
+      });
+
+      // Add a default Income option if not present
+      const incomeOpt = document.createElement('option');
+      incomeOpt.value = "Income";
+      incomeOpt.textContent = "Income";
+      select.appendChild(incomeOpt);
+    }
+
+    // 2. Submit New Transaction
+    document.getElementById('tx-form').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
 
       const entry = {
         type: document.getElementById('tx-type').value,
@@ -211,14 +300,79 @@
         note: document.getElementById('tx-note').value
       };
 
-      transactions.push(entry);
-      localStorage.setItem('transactions', JSON.stringify(transactions));
+      try {
+        await fetch(SCRIPT_URL, {
+          method: 'POST',
+          mode: 'no-cors', // Essential for Google Apps Script redirects
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(entry)
+        });
 
-      alert('Transaction logged!');
-      e.target.reset();
-      document.getElementById('tx-date').valueAsDate = new Date();
-      renderDashboard();
+        // Add locally so dashboard updates immediately
+        transactions.push(entry);
+        
+        showStatus("✅ Saved to Google Sheet!");
+        e.target.reset();
+        document.getElementById('tx-date').valueAsDate = new Date();
+        renderDashboard();
+      } catch (err) {
+        alert('Failed to save transaction. Please check your connection.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save Entry';
+      }
     });
+
+    // 3. Render Dashboard Metrics & Progress Bars
+    function renderDashboard() {
+      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+      let spentSum = 0;
+      let incomeSum = 0;
+      const catTotals = {};
+
+      Object.keys(budgets).forEach(cat => catTotals[cat] = 0);
+
+      transactions.filter(t => t.date && t.date.startsWith(currentMonth)).forEach(t => {
+        if (t.type === 'Expense') {
+          spentSum += t.amount;
+          if (catTotals[t.category] !== undefined) {
+            catTotals[t.category] += t.amount;
+          }
+        } else if (t.type === 'Income') {
+          incomeSum += t.amount;
+        }
+      });
+
+      document.getElementById('total-spent').textContent = `$${spentSum.toFixed(2)}`;
+      document.getElementById('total-income').textContent = `$${incomeSum.toFixed(2)}`;
+
+      const container = document.getElementById('category-progress-list');
+      container.innerHTML = '';
+
+      if (Object.keys(budgets).length === 0) {
+        container.innerHTML = '<p style="color: var(--text-muted);">No category budgets set in sheet.</p>';
+        return;
+      }
+
+      Object.entries(budgets).forEach(([cat, budget]) => {
+        const spent = catTotals[cat] || 0;
+        const percent = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
+        const isOver = spent > budget && budget > 0;
+
+        const html = `
+          <div class="cat-row">
+            <div class="cat-header">
+              <span><strong>${cat}</strong></span>
+              <span>$${spent.toFixed(0)} / $${budget}</span>
+            </div>
+            <div class="progress-bg">
+              <div class="progress-fill ${isOver ? 'over-budget' : ''}" style="width: ${percent}%;"></div>
+            </div>
+          </div>
+        `;
+        container.insertAdjacentHTML('beforeend', html);
+      });
+    }
 
     // View Navigation Logic
     function switchView(view) {
@@ -244,54 +398,8 @@
       }
     }
 
-    // Calculate and Render Dashboard
-    function renderDashboard() {
-      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-      let spentSum = 0;
-      let incomeSum = 0;
-      const catTotals = {};
-
-      // Initialize categories
-      Object.keys(sampleBudgets).forEach(cat => catTotals[cat] = 0);
-
-      // Filter and sum entries for current month
-      transactions.filter(t => t.date.startsWith(currentMonth)).forEach(t => {
-        if (t.type === 'Expense') {
-          spentSum += t.amount;
-          if (catTotals[t.category] !== undefined) {
-            catTotals[t.category] += t.amount;
-          }
-        } else if (t.type === 'Income') {
-          incomeSum += t.amount;
-        }
-      });
-
-      document.getElementById('total-spent').textContent = `$${spentSum.toFixed(2)}`;
-      document.getElementById('total-income').textContent = `$${incomeSum.toFixed(2)}`;
-
-      // Render Category Progress Bars
-      const container = document.getElementById('category-progress-list');
-      container.innerHTML = '';
-
-      Object.entries(sampleBudgets).forEach(([cat, budget]) => {
-        const spent = catTotals[cat] || 0;
-        const percent = Math.min((spent / budget) * 100, 100);
-        const isOver = spent > budget;
-
-        const html = `
-          <div class="cat-row">
-            <div class="cat-header">
-              <span><strong>${cat}</strong></span>
-              <span>$${spent.toFixed(0)} / $${budget}</span>
-            </div>
-            <div class="progress-bg">
-              <div class="progress-fill ${isOver ? 'over-budget' : ''}" style="width: ${percent}%;"></div>
-            </div>
-          </div>
-        `;
-        container.insertAdjacentHTML('beforeend', html);
-      });
-    }
+    // Initial load
+    loadDataFromSheet();
   </script>
 </body>
 </html>
