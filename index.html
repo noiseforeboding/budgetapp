@@ -55,7 +55,6 @@
 
     .card h2 { font-size: 1rem; margin-bottom: 1rem; color: var(--text-muted); }
 
-    /* Form Styles */
     .form-group { margin-bottom: 1rem; }
     label { display: block; font-size: 0.875rem; font-weight: 600; margin-bottom: 0.35rem; }
     input, select {
@@ -81,21 +80,18 @@
     }
     .btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-    /* Summary Metrics */
     .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem; }
     .metric-card { background: var(--card-bg); padding: 1rem; border-radius: 12px; border: 1px solid var(--border); text-align: center; }
     .metric-val { font-size: 1.25rem; font-weight: 700; margin-top: 0.25rem; }
     .income { color: var(--success); }
     .expense { color: var(--danger); }
 
-    /* Category Budget Bar */
     .cat-row { margin-bottom: 1rem; }
     .cat-header { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 0.35rem; }
     .progress-bg { background: #e2e8f0; height: 10px; border-radius: 5px; overflow: hidden; }
     .progress-fill { background: var(--primary); height: 100%; width: 0%; transition: width 0.3s ease; }
     .over-budget { background: var(--danger); }
 
-    /* Status Banner */
     .status-banner {
       background: #eff6ff;
       color: #1e40af;
@@ -106,7 +102,6 @@
       margin-bottom: 1rem;
     }
 
-    /* Navigation */
     nav {
       background: var(--card-bg);
       border-bottom: 1px solid var(--border);
@@ -140,14 +135,12 @@
   </style>
 </head>
 <body>
-
   <header>
-    <div style="width: 24px;"></div> <!-- Placeholder to balance header -->
+    <div style="width: 24px;"></div>
     <h1 id="app-title">Log Transaction</h1>
     <button class="icon-btn" title="Refresh Data" onclick="loadDataFromSheet()">🔄</button>
   </header>
 
-  <!-- Top Navigation -->
   <nav>
     <button id="nav-log" class="active" onclick="switchView('log')">Log Transaction</button>
     <button id="nav-dash" onclick="switchView('dash')">This Month</button>
@@ -156,7 +149,6 @@
   <main>
     <div id="status-msg" class="status-banner hidden">Loading latest sheet data...</div>
 
-    <!-- VIEW 1: LOG EXPENSE / INCOME -->
     <section id="view-log">
       <form id="tx-form" class="card">
         <div class="form-group">
@@ -193,7 +185,6 @@
       </form>
     </section>
 
-    <!-- VIEW 2: MONTHLY OVERVIEW -->
     <section id="view-dashboard" class="hidden">
       <div class="metrics-grid">
         <div class="metric-card">
@@ -216,12 +207,8 @@
   </main>
 
   <script>
-    // -------------------------------------------------------------
-    // REPLACE THIS WITH YOUR GOOGLE APPS SCRIPT WEB APP URL
-    // -------------------------------------------------------------
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyulEmg-gesuCE_5S4jeeOr0kXk2-YZmrTietxFd0mXyAW-NnAhVmBfoIioyr1Dex7rEg/exec";
 
-    // Set default date input to today
     document.getElementById('tx-date').valueAsDate = new Date();
 
     let budgets = {};
@@ -232,12 +219,9 @@
     function showStatus(text, duration = 3000) {
       statusMsg.textContent = text;
       statusMsg.classList.remove('hidden');
-      if (duration > 0) {
-        setTimeout(() => statusMsg.classList.add('hidden'), duration);
-      }
+      if (duration > 0) setTimeout(() => statusMsg.classList.add('hidden'), duration);
     }
 
-    // 1. Fetch Data from Google Sheets
     async function loadDataFromSheet() {
       if (!SCRIPT_URL || SCRIPT_URL.includes("YOUR_DEPLOYED_WEB_APP_URL_HERE")) {
         showStatus("⚠️ Please add your Apps Script URL to index.html", 0);
@@ -253,12 +237,11 @@
         if (result.status === 'success') {
           transactions = result.transactions || [];
           budgets = result.budgets || {};
-          
           populateCategoryDropdown();
           renderDashboard();
           showStatus("✅ Synced with Google Sheets");
         } else {
-          showStatus("❌ Error reading sheet data");
+          showStatus(`❌ ${result.message || 'Error reading sheet data'}`, 5000);
         }
       } catch (err) {
         console.error("Fetch error:", err);
@@ -266,7 +249,6 @@
       }
     }
 
-    // Populate Category Dropdown dynamically from fetched Budgets
     function populateCategoryDropdown() {
       const select = document.getElementById('tx-category');
       select.innerHTML = '';
@@ -284,14 +266,24 @@
         select.appendChild(opt);
       });
 
-      // Add a default Income option if not present
       const incomeOpt = document.createElement('option');
       incomeOpt.value = "Income";
       incomeOpt.textContent = "Income";
       select.appendChild(incomeOpt);
     }
 
-    // 2. Submit New Transaction
+    function parseTxDate(value) {
+      if (!value) return null;
+      if (value instanceof Date && !isNaN(value)) return value;
+
+      const s = String(value).trim();
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+      if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
     document.getElementById('tx-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('submit-btn');
@@ -309,14 +301,12 @@
       try {
         await fetch(SCRIPT_URL, {
           method: 'POST',
-          mode: 'no-cors', // Essential for Google Apps Script redirects
+          mode: 'no-cors',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(entry)
         });
 
-        // Add locally so dashboard updates immediately
         transactions.push(entry);
-        
         showStatus("✅ Saved to Google Sheet!");
         e.target.reset();
         document.getElementById('tx-date').valueAsDate = new Date();
@@ -329,23 +319,33 @@
       }
     });
 
-    // 3. Render Dashboard Metrics & Progress Bars
     function renderDashboard() {
-      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth();
+
       let spentSum = 0;
       let incomeSum = 0;
       const catTotals = {};
 
       Object.keys(budgets).forEach(cat => catTotals[cat] = 0);
 
-      transactions.filter(t => t.date && t.date.startsWith(currentMonth)).forEach(t => {
-        if (t.type === 'Expense') {
-          spentSum += t.amount;
-          if (catTotals[t.category] !== undefined) {
-            catTotals[t.category] += t.amount;
-          }
-        } else if (t.type === 'Income') {
-          incomeSum += t.amount;
+      transactions.forEach((t) => {
+        const d = parseTxDate(t.date || t.Date);
+        if (!d) return;
+
+        if (d.getFullYear() !== currentYear || d.getMonth() !== currentMonth) return;
+
+        const type = String(t.type || t.Type || '').trim();
+        const category = String(t.category || t.Category || '').trim();
+        const amount = Number(t.amount ?? t.Amount ?? 0);
+        if (!Number.isFinite(amount)) return;
+
+        if (type === 'Expense') {
+          spentSum += amount;
+          if (catTotals[category] !== undefined) catTotals[category] += amount;
+        } else if (type === 'Income') {
+          incomeSum += amount;
         }
       });
 
@@ -362,14 +362,15 @@
 
       Object.entries(budgets).forEach(([cat, budget]) => {
         const spent = catTotals[cat] || 0;
-        const percent = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
-        const isOver = spent > budget && budget > 0;
+        const b = Number(budget) || 0;
+        const percent = b > 0 ? Math.min((spent / b) * 100, 100) : 0;
+        const isOver = spent > b && b > 0;
 
         const html = `
           <div class="cat-row">
             <div class="cat-header">
               <span><strong>${cat}</strong></span>
-              <span>$${spent.toFixed(0)} / $${budget}</span>
+              <span>$${spent.toFixed(0)} / $${b}</span>
             </div>
             <div class="progress-bg">
               <div class="progress-fill ${isOver ? 'over-budget' : ''}" style="width: ${percent}%;"></div>
@@ -380,7 +381,6 @@
       });
     }
 
-    // View Navigation Logic
     function switchView(view) {
       const logSec = document.getElementById('view-log');
       const dashSec = document.getElementById('view-dashboard');
@@ -404,7 +404,6 @@
       }
     }
 
-    // Initial load
     loadDataFromSheet();
   </script>
 </body>
