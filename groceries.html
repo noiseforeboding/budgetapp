@@ -131,6 +131,7 @@
     </div>
   </div>
 
+  <script src="app-data.js"></script>
   <script>
     const GROCERY_BUDGET_KEY = "groceryBudgetMonthly";
     const TRANSACTIONS_KEY = "transactions";
@@ -151,62 +152,78 @@
 
     const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
-    function loadTransactions() {
-      try { return JSON.parse(localStorage.getItem(TRANSACTIONS_KEY) || "[]"); }
-      catch { return []; }
+    function toAmount(value) {
+      const num = Number(value);
+      return Number.isFinite(num) ? num : 0;
     }
 
-    function isSameMonth(dateStr, ref = new Date()) {
-      const d = new Date(dateStr + "T00:00:00");
-      return d.getMonth() === ref.getMonth() && d.getFullYear() === ref.getFullYear();
+    function isGroceriesCategory(value) {
+      return String(value || "").trim().toLowerCase() === "groceries";
     }
 
-    const groceryBudget = Number(localStorage.getItem(GROCERY_BUDGET_KEY) || 0);
-    const allTx = loadTransactions();
+    async function init() {
+      const groceryBudget = Number(localStorage.getItem(GROCERY_BUDGET_KEY) || 0);
+      const loaded = await AppData.loadTransactionsAndBudgets({
+        scriptUrl: AppData.SCRIPT_URL,
+        localStorageKey: TRANSACTIONS_KEY
+      });
 
-    const groceryTx = allTx.filter(t => (t.category || "").toLowerCase() === "groceries");
-    const groceryMonthTx = groceryTx.filter(t => isSameMonth(t.date));
+      const allTx = loaded.transactions;
+      const monthTx = AppData.filterMonth(allTx);
+      const groceryTx = allTx.filter((t) => isGroceriesCategory(t.category));
+      const groceryMonthTx = monthTx.filter((t) => isGroceriesCategory(t.category));
 
-    const spentMonth = groceryMonthTx.reduce((sum, t) => sum + Number(t.amount || 0), 0);
-    const totalMonthAllCategories = allTx
-      .filter(t => isSameMonth(t.date))
-      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+      const spentMonth = groceryMonthTx.reduce((sum, t) => sum + toAmount(t.amount), 0);
+      const totalMonthAllCategories = monthTx.reduce((sum, t) => sum + toAmount(t.amount), 0);
 
-    const remaining = groceryBudget - spentMonth;
-    const pctUsed = groceryBudget > 0 ? (spentMonth / groceryBudget) * 100 : 0;
-    const pctOfTotal = totalMonthAllCategories > 0 ? (spentMonth / totalMonthAllCategories) * 100 : 0;
+      const remaining = groceryBudget - spentMonth;
+      const pctUsed = groceryBudget > 0 ? (spentMonth / groceryBudget) * 100 : 0;
+      const pctOfTotal = totalMonthAllCategories > 0 ? (spentMonth / totalMonthAllCategories) * 100 : 0;
 
-    document.getElementById("groceryBudget").textContent = fmt.format(groceryBudget);
-    document.getElementById("spentMonth").textContent = fmt.format(spentMonth);
-    document.getElementById("remaining").textContent = fmt.format(remaining);
-    document.getElementById("percentTotal").textContent = `${pctOfTotal.toFixed(1)}%`;
+      document.getElementById("groceryBudget").textContent = fmt.format(groceryBudget);
+      document.getElementById("spentMonth").textContent = fmt.format(spentMonth);
+      document.getElementById("remaining").textContent = fmt.format(remaining);
+      document.getElementById("percentTotal").textContent = `${pctOfTotal.toFixed(1)}%`;
 
-    const bar = document.getElementById("progressBar");
-    bar.style.width = `${Math.min(pctUsed, 100)}%`;
-    bar.style.background = pctUsed > 100
-      ? "linear-gradient(90deg, #fb7185, #ef4444)"
-      : pctUsed > 85
-      ? "linear-gradient(90deg, #fbbf24, #f59e0b)"
-      : "linear-gradient(90deg, #34d399, #10b981)";
+      const bar = document.getElementById("progressBar");
+      bar.style.width = `${Math.min(pctUsed, 100)}%`;
+      bar.style.background = pctUsed > 100
+        ? "linear-gradient(90deg, #fb7185, #ef4444)"
+        : pctUsed > 85
+        ? "linear-gradient(90deg, #fbbf24, #f59e0b)"
+        : "linear-gradient(90deg, #34d399, #10b981)";
 
-    document.getElementById("usageText").textContent =
-      `${fmt.format(spentMonth)} of ${fmt.format(groceryBudget)} used (${pctUsed.toFixed(1)}%)`;
+      document.getElementById("usageText").textContent =
+        `${fmt.format(spentMonth)} of ${fmt.format(groceryBudget)} used (${pctUsed.toFixed(1)}%)`;
 
-    const rows = document.getElementById("txRows");
-    const recent = [...groceryTx].sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+      const rows = document.getElementById("txRows");
+      const recent = [...groceryTx]
+        .sort((a, b) => {
+          const aDate = AppData.parseTxDate(a.date);
+          const bDate = AppData.parseTxDate(b.date);
+          return (bDate ? bDate.getTime() : 0) - (aDate ? aDate.getTime() : 0);
+        })
+        .slice(0, 5);
 
-    if (recent.length === 0) {
-      rows.innerHTML = `<tr><td colspan="4" style="color:#94a3b8;">No grocery transactions yet.</td></tr>`;
-    } else {
-      rows.innerHTML = recent.map(t => `
-        <tr>
-          <td>${t.date}</td>
-          <td>${t.note || "-"}</td>
-          <td><span class="tag">${t.category || "Groceries"}</span></td>
-          <td>${fmt.format(Number(t.amount || 0))}</td>
-        </tr>
-      `).join("");
+      if (recent.length === 0) {
+        rows.innerHTML = `<tr><td colspan="4" style="color:#94a3b8;">No grocery transactions yet.</td></tr>`;
+      } else {
+        rows.innerHTML = recent.map((t) => `
+          <tr>
+            <td>${t.date || "-"}</td>
+            <td>${t.note || "-"}</td>
+            <td><span class="tag">${t.category || "Groceries"}</span></td>
+            <td>${fmt.format(toAmount(t.amount))}</td>
+          </tr>
+        `).join("");
+      }
     }
+
+    init().catch((err) => {
+      console.error("Failed to load grocery data", err);
+      document.getElementById("usageText").textContent = "Unable to load grocery data.";
+      document.getElementById("txRows").innerHTML = `<tr><td colspan="4" style="color:#94a3b8;">Unable to load transactions.</td></tr>`;
+    });
   </script>
 </body>
 </html>

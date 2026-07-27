@@ -209,8 +209,9 @@
     </section>
   </main>
 
+  <script src="app-data.js"></script>
   <script>
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyulEmg-gesuCE_5S4jeeOr0kXk2-YZmrTietxFd0mXyAW-NnAhVmBfoIioyr1Dex7rEg/exec";
+    const SCRIPT_URL = AppData.SCRIPT_URL;
 
     document.getElementById('tx-date').valueAsDate = new Date();
 
@@ -226,28 +227,31 @@
     }
 
     async function loadDataFromSheet() {
-      if (!SCRIPT_URL || SCRIPT_URL.includes("YOUR_DEPLOYED_WEB_APP_URL_HERE")) {
-        showStatus("⚠️ Please add your Apps Script URL to index.html", 0);
-        return;
-      }
-
-      showStatus("Syncing with Google Sheets...", 0);
+      showStatus('Syncing with Google Sheets...', 0);
 
       try {
-        const response = await fetch(SCRIPT_URL);
-        const result = await response.json();
+        const loaded = await AppData.loadTransactionsAndBudgets({
+          scriptUrl: SCRIPT_URL,
+          localStorageKey: 'transactions'
+        });
 
-        if (result.status === 'success') {
-          transactions = result.transactions || [];
-          budgets = result.budgets || {};
-          populateCategoryDropdown();
-          renderDashboard();
-          showStatus("✅ Synced with Google Sheets");
+        transactions = Array.isArray(loaded.transactions) ? loaded.transactions : [];
+        budgets = loaded.budgets || {};
+
+        populateCategoryDropdown();
+        renderDashboard();
+
+        if (loaded.source === 'script') {
+          showStatus('✅ Synced with Google Sheets');
         } else {
-          showStatus(`❌ ${result.message || 'Error reading sheet data'}`, 5000);
+          showStatus('⚠️ Using local data (sheet unavailable)', 4000);
         }
       } catch (err) {
-        console.error("Fetch error:", err);
+        console.error('Load error:', err);
+        transactions = [];
+        budgets = {};
+        populateCategoryDropdown();
+        renderDashboard();
         showStatus("⚠️ Connection error. Couldn't fetch data.", 4000);
       }
     }
@@ -270,21 +274,9 @@
       });
 
       const incomeOpt = document.createElement('option');
-      incomeOpt.value = "Income";
-      incomeOpt.textContent = "Income";
+      incomeOpt.value = 'Income';
+      incomeOpt.textContent = 'Income';
       select.appendChild(incomeOpt);
-    }
-
-    function parseTxDate(value) {
-      if (!value) return null;
-      if (value instanceof Date && !isNaN(value)) return value;
-
-      const s = String(value).trim();
-      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-      if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-
-      const d = new Date(s);
-      return isNaN(d.getTime()) ? null : d;
     }
 
     document.getElementById('tx-form').addEventListener('submit', async (e) => {
@@ -309,8 +301,9 @@
           body: JSON.stringify(entry)
         });
 
-        transactions.push(entry);
-        showStatus("✅ Saved to Google Sheet!");
+        const normalized = AppData.normalizeTransaction(entry);
+        transactions.push(normalized);
+        showStatus('✅ Saved to Google Sheet!');
         e.target.reset();
         document.getElementById('tx-date').valueAsDate = new Date();
         renderDashboard();
@@ -326,22 +319,22 @@
       const now = new Date();
       const currentYear = now.getFullYear();
       const currentMonth = now.getMonth();
-
       let spentSum = 0;
       let incomeSum = 0;
       const catTotals = {};
 
-      Object.keys(budgets).forEach(cat => catTotals[cat] = 0);
+      Object.keys(budgets).forEach((cat) => {
+        catTotals[cat] = 0;
+      });
 
       transactions.forEach((t) => {
-        const d = parseTxDate(t.date || t.Date);
-        if (!d) return;
+        const txDate = AppData.parseTxDate(t.date);
+        if (!txDate) return;
+        if (txDate.getFullYear() !== currentYear || txDate.getMonth() !== currentMonth) return;
 
-        if (d.getFullYear() !== currentYear || d.getMonth() !== currentMonth) return;
-
-        const type = String(t.type || t.Type || '').trim();
-        const category = String(t.category || t.Category || '').trim();
-        const amount = Number(t.amount ?? t.Amount ?? 0);
+        const type = String(t.type || '').trim();
+        const category = String(t.category || '').trim();
+        const amount = Number(t.amount);
         if (!Number.isFinite(amount)) return;
 
         if (type === 'Expense') {
