@@ -6,21 +6,22 @@
   <title>Shared Budget Tracker</title>
   <style>
     :root {
-      --bg: #f4f6f8;
-      --card-bg: #ffffff;
-      --primary: #2563eb;
-      --text: #1e293b;
-      --text-muted: #64748b;
-      --border: #e2e8f0;
-      --success: #16a34a;
-      --danger: #dc2626;
+      --bg: #0f172a;
+      --card-bg: #111827;
+      --primary: #60a5fa;
+      --text: #e5e7eb;
+      --text-muted: #94a3b8;
+      --border: #1f2937;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-    body { background-color: var(--bg); color: var(--text); }
+    body { background: linear-gradient(180deg, #0b1220 0%, var(--bg) 100%); color: var(--text); }
 
     header {
-      background: var(--card-bg);
+      background: rgba(17,24,39,0.95);
       padding: 1rem;
       border-bottom: 1px solid var(--border);
       text-align: center;
@@ -30,6 +31,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      backdrop-filter: blur(4px);
     }
 
     header h1 { font-size: 1.1rem; }
@@ -45,12 +47,12 @@
     main { max-width: 500px; margin: 1rem auto; padding: 0 1rem; }
 
     .card {
-      background: var(--card-bg);
+      background: rgba(17,24,39,0.9);
       border-radius: 12px;
       padding: 1.25rem;
       margin-bottom: 1rem;
       border: 1px solid var(--border);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
     }
 
     .card h2 { font-size: 1rem; margin-bottom: 1rem; color: var(--text-muted); }
@@ -63,47 +65,50 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       font-size: 1rem;
-      background: #fafafa;
+      background: #0b1220;
+      color: var(--text);
     }
-    input:focus, select:focus { outline: 2px solid var(--primary); background: #fff; }
+    input:focus, select:focus { outline: 2px solid var(--primary); background: #0f172a; }
 
     .btn {
       width: 100%;
       background: var(--primary);
-      color: white;
+      color: #0b1220;
       border: none;
       padding: 0.85rem;
       border-radius: 8px;
       font-size: 1rem;
-      font-weight: 600;
+      font-weight: 700;
       cursor: pointer;
     }
     .btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-    .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem; }
-    .metric-card { background: var(--card-bg); padding: 1rem; border-radius: 12px; border: 1px solid var(--border); text-align: center; }
-    .metric-val { font-size: 1.25rem; font-weight: 700; margin-top: 0.25rem; }
-    .income { color: var(--success); }
-    .expense { color: var(--danger); }
+    .metrics-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem; }
+    .metric-card { background: rgba(17,24,39,0.9); padding: 1rem; border-radius: 12px; border: 1px solid var(--border); text-align: center; }
+    .metric-val { font-size: 1.25rem; font-weight: 700; margin-top: 0.25rem; color: var(--text); }
+    .remaining-good { color: var(--success); }
+    .remaining-warn { color: var(--warning); }
+    .remaining-bad { color: var(--danger); }
 
     .cat-row { margin-bottom: 1rem; }
     .cat-header { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 0.35rem; }
-    .progress-bg { background: #e2e8f0; height: 10px; border-radius: 5px; overflow: hidden; }
+    .progress-bg { background: #0b1220; height: 10px; border-radius: 5px; overflow: hidden; border: 1px solid var(--border); }
     .progress-fill { background: var(--primary); height: 100%; width: 0%; transition: width 0.3s ease; }
     .over-budget { background: var(--danger); }
 
     .status-banner {
-      background: #eff6ff;
-      color: #1e40af;
+      background: #1e293b;
+      color: #bfdbfe;
       padding: 0.5rem;
       font-size: 0.8rem;
       text-align: center;
       border-radius: 6px;
       margin-bottom: 1rem;
+      border: 1px solid #334155;
     }
 
     nav {
-      background: var(--card-bg);
+      background: rgba(17,24,39,0.95);
       border-bottom: 1px solid var(--border);
       display: flex;
       justify-content: center;
@@ -113,6 +118,7 @@
       top: 62px;
       z-index: 9;
       flex-wrap: wrap;
+      backdrop-filter: blur(4px);
     }
 
     nav button {
@@ -129,10 +135,14 @@
     nav button.active {
       color: var(--primary);
       border-color: var(--primary);
-      background: #eff6ff;
+      background: rgba(30, 41, 59, 0.85);
     }
 
     .hidden { display: none; }
+
+    @media (max-width: 640px) {
+      .metrics-grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -192,11 +202,15 @@
       <div class="metrics-grid">
         <div class="metric-card">
           <div style="font-size: 0.8rem; color: var(--text-muted);">Spent This Month</div>
-          <div id="total-spent" class="metric-val expense">$0.00</div>
+          <div id="total-spent" class="metric-val">$0.00</div>
         </div>
         <div class="metric-card">
           <div style="font-size: 0.8rem; color: var(--text-muted);">Income This Month</div>
-          <div id="total-income" class="metric-val income">$0.00</div>
+          <div id="total-income" class="metric-val">$0.00</div>
+        </div>
+        <div class="metric-card">
+          <div style="font-size: 0.8rem; color: var(--text-muted);">Remaining</div>
+          <div id="total-remaining" class="metric-val">$0.00</div>
         </div>
       </div>
 
@@ -352,8 +366,23 @@
         }
       });
 
+      const remaining = incomeSum - spentSum;
+      const spentRatioPct = incomeSum > 0 ? (spentSum / incomeSum) * 100 : (spentSum > 0 ? 101 : 0);
+
+      const remainingEl = document.getElementById('total-remaining');
+      remainingEl.classList.remove('remaining-good', 'remaining-warn', 'remaining-bad');
+
+      if (spentRatioPct <= 75) {
+        remainingEl.classList.add('remaining-good');
+      } else if (spentRatioPct <= 100) {
+        remainingEl.classList.add('remaining-warn');
+      } else {
+        remainingEl.classList.add('remaining-bad');
+      }
+
       document.getElementById('total-spent').textContent = `$${spentSum.toFixed(2)}`;
       document.getElementById('total-income').textContent = `$${incomeSum.toFixed(2)}`;
+      remainingEl.textContent = `$${remaining.toFixed(2)}`;
 
       const container = document.getElementById('category-progress-list');
       container.innerHTML = '';

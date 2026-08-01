@@ -126,16 +126,8 @@
     if (!localStorage.getItem(WEEKLY_BUDGET_KEY)) {
       localStorage.setItem(WEEKLY_BUDGET_KEY, "600");
     }
-    if (!localStorage.getItem(TRANSACTIONS_KEY)) {
-      const demo = [
-        { id: "1", date: "2026-07-21", amount: 45.30, category: "Groceries", note: "Produce" },
-        { id: "2", date: "2026-07-22", amount: 18.20, category: "Coffee", note: "Cafe" },
-        { id: "3", date: "2026-07-23", amount: 62.10, category: "Gas", note: "Fuel" },
-        { id: "4", date: "2026-07-24", amount: 31.40, category: "Groceries", note: "Snacks" },
-        { id: "5", date: "2026-07-26", amount: 27.99, category: "Dining", note: "Takeout" }
-      ];
-      localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(demo));
-    }
+
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyulEmg-gesuCE_5S4jeeOr0kXk2-YZmrTietxFd0mXyAW-NnAhVmBfoIioyr1Dex7rEg/exec";
 
     const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
@@ -155,87 +147,126 @@
       return s;
     }
 
-    function loadTransactions() {
-      try { return JSON.parse(localStorage.getItem(TRANSACTIONS_KEY) || "[]"); }
-      catch { return []; }
+    function parseTxDate(value) {
+      if (!value) return null;
+      if (value instanceof Date && !isNaN(value)) return value;
+
+      const s = String(value).trim();
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+      if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d;
     }
 
-    function inRange(dateStr, start, end) {
-      const d = new Date(dateStr + "T00:00:00");
+    function normalizeTx(raw) {
+      const amount = Number(raw.amount ?? raw.Amount ?? 0);
+      const category = String(raw.category ?? raw.Category ?? '').trim();
+      const note = raw.note ?? raw.Note ?? '';
+      const date = raw.date ?? raw.Date ?? '';
+      return { amount, category, note, date };
+    }
+
+    function inRange(dateValue, start, end) {
+      const d = parseTxDate(dateValue);
+      if (!d) return false;
       return d >= start && d <= end;
     }
 
-    const weeklyBudget = Number(localStorage.getItem(WEEKLY_BUDGET_KEY) || 0);
-    const transactions = loadTransactions();
-
-    const today = new Date();
-    const monday = getMonday(today);
-    const sunday = getSunday(monday);
-
-    const thisWeekTx = transactions.filter(t => inRange(t.date, monday, sunday));
-    const spentSoFar = thisWeekTx.reduce((sum, t) => sum + Number(t.amount || 0), 0);
-    const remaining = weeklyBudget - spentSoFar;
-
-    const jsDay = today.getDay();
-    const dayIndex = jsDay === 0 ? 7 : jsDay;
-    const paceTarget = (weeklyBudget / 7) * dayIndex;
-
-    const statusEl = document.getElementById("paceStatus");
-    const hintEl = document.getElementById("paceHint");
-
-    let statusClass = "ok";
-    let statusText = "On track ✅";
-    if (spentSoFar > paceTarget * 1.1) {
-      statusClass = "bad";
-      statusText = "Over pace ⚠️";
-    } else if (spentSoFar > paceTarget) {
-      statusClass = "warn";
-      statusText = "Slightly above pace";
+    function loadLocalTransactions() {
+      try { return JSON.parse(localStorage.getItem(TRANSACTIONS_KEY) || "[]").map(normalizeTx); }
+      catch { return []; }
     }
 
-    document.getElementById("weeklyBudget").textContent = fmt.format(weeklyBudget);
-    document.getElementById("spentSoFar").textContent = fmt.format(spentSoFar);
-    document.getElementById("remaining").textContent = fmt.format(remaining);
-    document.getElementById("paceTarget").textContent = fmt.format(paceTarget);
-    statusEl.className = `status ${statusClass}`;
-    statusEl.textContent = statusText;
-    hintEl.textContent = `By today, target spend is ${fmt.format(paceTarget)}. Current spend is ${fmt.format(spentSoFar)}.`;
+    async function loadTransactions() {
+      try {
+        const response = await fetch(SCRIPT_URL);
+        const result = await response.json();
+        if (result.status === 'success' && Array.isArray(result.transactions)) {
+          return result.transactions.map(normalizeTx);
+        }
+      } catch (e) {
+        console.warn('Using local transactions fallback for This Week.', e);
+      }
+      return loadLocalTransactions();
+    }
 
-    const labels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-    const daily = [0,0,0,0,0,0,0];
+    async function render() {
+      const weeklyBudget = Number(localStorage.getItem(WEEKLY_BUDGET_KEY) || 0);
+      const transactions = await loadTransactions();
 
-    thisWeekTx.forEach(t => {
-      const d = new Date(t.date + "T00:00:00");
-      const day = d.getDay();
-      const idx = day === 0 ? 6 : day - 1;
-      daily[idx] += Number(t.amount || 0);
-    });
+      const today = new Date();
+      const monday = getMonday(today);
+      const sunday = getSunday(monday);
 
-    const maxVal = Math.max(...daily, 1);
-    const bars = document.getElementById("bars");
-    bars.innerHTML = "";
+      const thisWeekTx = transactions.filter(t => inRange(t.date, monday, sunday));
+      const spentSoFar = thisWeekTx.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+      const remaining = weeklyBudget - spentSoFar;
 
-    daily.forEach((amt, i) => {
-      const wrap = document.createElement("div");
-      wrap.className = "bar-wrap";
+      const jsDay = today.getDay();
+      const dayIndex = jsDay === 0 ? 7 : jsDay;
+      const paceTarget = (weeklyBudget / 7) * dayIndex;
 
-      const amtEl = document.createElement("div");
-      amtEl.className = "amt";
-      amtEl.textContent = fmt.format(amt);
+      const statusEl = document.getElementById("paceStatus");
+      const hintEl = document.getElementById("paceHint");
 
-      const bar = document.createElement("div");
-      bar.className = "bar";
-      bar.style.height = `${Math.max((amt / maxVal) * 160, 2)}px`;
+      let statusClass = "ok";
+      let statusText = "On track ✅";
+      if (spentSoFar > paceTarget * 1.1) {
+        statusClass = "bad";
+        statusText = "Over pace ⚠️";
+      } else if (spentSoFar > paceTarget) {
+        statusClass = "warn";
+        statusText = "Slightly above pace";
+      }
 
-      const dayEl = document.createElement("div");
-      dayEl.className = "day";
-      dayEl.textContent = labels[i];
+      document.getElementById("weeklyBudget").textContent = fmt.format(weeklyBudget);
+      document.getElementById("spentSoFar").textContent = fmt.format(spentSoFar);
+      document.getElementById("remaining").textContent = fmt.format(remaining);
+      document.getElementById("paceTarget").textContent = fmt.format(paceTarget);
+      statusEl.className = `status ${statusClass}`;
+      statusEl.textContent = statusText;
+      hintEl.textContent = `By today, target spend is ${fmt.format(paceTarget)}. Current spend is ${fmt.format(spentSoFar)}.`;
 
-      wrap.appendChild(amtEl);
-      wrap.appendChild(bar);
-      wrap.appendChild(dayEl);
-      bars.appendChild(wrap);
-    });
+      const labels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+      const daily = [0,0,0,0,0,0,0];
+
+      thisWeekTx.forEach(t => {
+        const d = parseTxDate(t.date);
+        if (!d) return;
+        const day = d.getDay();
+        const idx = day === 0 ? 6 : day - 1;
+        daily[idx] += Number(t.amount || 0);
+      });
+
+      const maxVal = Math.max(...daily, 1);
+      const bars = document.getElementById("bars");
+      bars.innerHTML = "";
+
+      daily.forEach((amt, i) => {
+        const wrap = document.createElement("div");
+        wrap.className = "bar-wrap";
+
+        const amtEl = document.createElement("div");
+        amtEl.className = "amt";
+        amtEl.textContent = fmt.format(amt);
+
+        const bar = document.createElement("div");
+        bar.className = "bar";
+        bar.style.height = `${Math.max((amt / maxVal) * 160, 2)}px`;
+
+        const dayEl = document.createElement("div");
+        dayEl.className = "day";
+        dayEl.textContent = labels[i];
+
+        wrap.appendChild(amtEl);
+        wrap.appendChild(bar);
+        wrap.appendChild(dayEl);
+        bars.appendChild(wrap);
+      });
+    }
+
+    render();
   </script>
 </body>
 </html>

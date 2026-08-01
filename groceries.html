@@ -134,79 +134,108 @@
   <script>
     const GROCERY_BUDGET_KEY = "groceryBudgetMonthly";
     const TRANSACTIONS_KEY = "transactions";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyulEmg-gesuCE_5S4jeeOr0kXk2-YZmrTietxFd0mXyAW-NnAhVmBfoIioyr1Dex7rEg/exec";
 
     if (!localStorage.getItem(GROCERY_BUDGET_KEY)) {
       localStorage.setItem(GROCERY_BUDGET_KEY, "450");
     }
-    if (!localStorage.getItem(TRANSACTIONS_KEY)) {
-      const demo = [
-        { id: "1", date: "2026-07-03", amount: 72.15, category: "Groceries", note: "Weekly shop" },
-        { id: "2", date: "2026-07-08", amount: 31.99, category: "Dining", note: "Lunch" },
-        { id: "3", date: "2026-07-12", amount: 64.80, category: "Groceries", note: "Costco" },
-        { id: "4", date: "2026-07-19", amount: 29.45, category: "Groceries", note: "Top-up" },
-        { id: "5", date: "2026-07-24", amount: 56.20, category: "Groceries", note: "Produce + dairy" }
-      ];
-      localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(demo));
-    }
 
     const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
-    function loadTransactions() {
-      try { return JSON.parse(localStorage.getItem(TRANSACTIONS_KEY) || "[]"); }
+    function parseTxDate(value) {
+      if (!value) return null;
+      if (value instanceof Date && !isNaN(value)) return value;
+
+      const s = String(value).trim();
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+      if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    function normalizeTx(raw) {
+      const amount = Number(raw.amount ?? raw.Amount ?? 0);
+      const category = String(raw.category ?? raw.Category ?? '').trim();
+      const note = raw.note ?? raw.Note ?? '';
+      const date = raw.date ?? raw.Date ?? '';
+      return { amount, category, note, date };
+    }
+
+    function loadLocalTransactions() {
+      try { return JSON.parse(localStorage.getItem(TRANSACTIONS_KEY) || "[]").map(normalizeTx); }
       catch { return []; }
     }
 
-    function isSameMonth(dateStr, ref = new Date()) {
-      const d = new Date(dateStr + "T00:00:00");
+    async function loadTransactions() {
+      try {
+        const response = await fetch(SCRIPT_URL);
+        const result = await response.json();
+        if (result.status === 'success' && Array.isArray(result.transactions)) {
+          return result.transactions.map(normalizeTx);
+        }
+      } catch (e) {
+        console.warn('Using local transactions fallback for Groceries.', e);
+      }
+      return loadLocalTransactions();
+    }
+
+    function isSameMonth(dateValue, ref = new Date()) {
+      const d = parseTxDate(dateValue);
+      if (!d) return false;
       return d.getMonth() === ref.getMonth() && d.getFullYear() === ref.getFullYear();
     }
 
-    const groceryBudget = Number(localStorage.getItem(GROCERY_BUDGET_KEY) || 0);
-    const allTx = loadTransactions();
+    async function render() {
+      const groceryBudget = Number(localStorage.getItem(GROCERY_BUDGET_KEY) || 0);
+      const allTx = await loadTransactions();
 
-    const groceryTx = allTx.filter(t => (t.category || "").toLowerCase() === "groceries");
-    const groceryMonthTx = groceryTx.filter(t => isSameMonth(t.date));
+      const groceryTx = allTx.filter(t => (t.category || "").toLowerCase() === "groceries");
+      const groceryMonthTx = groceryTx.filter(t => isSameMonth(t.date));
 
-    const spentMonth = groceryMonthTx.reduce((sum, t) => sum + Number(t.amount || 0), 0);
-    const totalMonthAllCategories = allTx
-      .filter(t => isSameMonth(t.date))
-      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+      const spentMonth = groceryMonthTx.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+      const totalMonthAllCategories = allTx
+        .filter(t => isSameMonth(t.date))
+        .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
-    const remaining = groceryBudget - spentMonth;
-    const pctUsed = groceryBudget > 0 ? (spentMonth / groceryBudget) * 100 : 0;
-    const pctOfTotal = totalMonthAllCategories > 0 ? (spentMonth / totalMonthAllCategories) * 100 : 0;
+      const remaining = groceryBudget - spentMonth;
+      const pctUsed = groceryBudget > 0 ? (spentMonth / groceryBudget) * 100 : 0;
+      const pctOfTotal = totalMonthAllCategories > 0 ? (spentMonth / totalMonthAllCategories) * 100 : 0;
 
-    document.getElementById("groceryBudget").textContent = fmt.format(groceryBudget);
-    document.getElementById("spentMonth").textContent = fmt.format(spentMonth);
-    document.getElementById("remaining").textContent = fmt.format(remaining);
-    document.getElementById("percentTotal").textContent = `${pctOfTotal.toFixed(1)}%`;
+      document.getElementById("groceryBudget").textContent = fmt.format(groceryBudget);
+      document.getElementById("spentMonth").textContent = fmt.format(spentMonth);
+      document.getElementById("remaining").textContent = fmt.format(remaining);
+      document.getElementById("percentTotal").textContent = `${pctOfTotal.toFixed(1)}%`;
 
-    const bar = document.getElementById("progressBar");
-    bar.style.width = `${Math.min(pctUsed, 100)}%`;
-    bar.style.background = pctUsed > 100
-      ? "linear-gradient(90deg, #fb7185, #ef4444)"
-      : pctUsed > 85
-      ? "linear-gradient(90deg, #fbbf24, #f59e0b)"
-      : "linear-gradient(90deg, #34d399, #10b981)";
+      const bar = document.getElementById("progressBar");
+      bar.style.width = `${Math.min(pctUsed, 100)}%`;
+      bar.style.background = pctUsed > 100
+        ? "linear-gradient(90deg, #fb7185, #ef4444)"
+        : pctUsed > 85
+        ? "linear-gradient(90deg, #fbbf24, #f59e0b)"
+        : "linear-gradient(90deg, #34d399, #10b981)";
 
-    document.getElementById("usageText").textContent =
-      `${fmt.format(spentMonth)} of ${fmt.format(groceryBudget)} used (${pctUsed.toFixed(1)}%)`;
+      document.getElementById("usageText").textContent =
+        `${fmt.format(spentMonth)} of ${fmt.format(groceryBudget)} used (${pctUsed.toFixed(1)}%)`;
 
-    const rows = document.getElementById("txRows");
-    const recent = [...groceryTx].sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+      const rows = document.getElementById("txRows");
+      const recent = [...groceryMonthTx].sort((a,b) => parseTxDate(b.date) - parseTxDate(a.date)).slice(0, 5);
 
-    if (recent.length === 0) {
-      rows.innerHTML = `<tr><td colspan="4" style="color:#94a3b8;">No grocery transactions yet.</td></tr>`;
-    } else {
-      rows.innerHTML = recent.map(t => `
-        <tr>
-          <td>${t.date}</td>
-          <td>${t.note || "-"}</td>
-          <td><span class="tag">${t.category || "Groceries"}</span></td>
-          <td>${fmt.format(Number(t.amount || 0))}</td>
-        </tr>
-      `).join("");
+      if (recent.length === 0) {
+        rows.innerHTML = `<tr><td colspan="4" style="color:#94a3b8;">No grocery transactions yet for this month.</td></tr>`;
+      } else {
+        rows.innerHTML = recent.map(t => `
+          <tr>
+            <td>${t.date}</td>
+            <td>${t.note || "-"}</td>
+            <td><span class="tag">${t.category || "Groceries"}</span></td>
+            <td>${fmt.format(Number(t.amount || 0))}</td>
+          </tr>
+        `).join("");
+      }
     }
+
+    render();
   </script>
 </body>
 </html>
