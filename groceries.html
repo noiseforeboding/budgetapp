@@ -132,13 +132,8 @@
   </div>
 
   <script>
-    const GROCERY_BUDGET_KEY = "groceryBudgetMonthly";
     const TRANSACTIONS_KEY = "transactions";
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyulEmg-gesuCE_5S4jeeOr0kXk2-YZmrTietxFd0mXyAW-NnAhVmBfoIioyr1Dex7rEg/exec";
-
-    if (!localStorage.getItem(GROCERY_BUDGET_KEY)) {
-      localStorage.setItem(GROCERY_BUDGET_KEY, "450");
-    }
 
     const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
@@ -167,17 +162,20 @@
       catch { return []; }
     }
 
-    async function loadTransactions() {
+    async function loadSheetData() {
       try {
         const response = await fetch(SCRIPT_URL);
         const result = await response.json();
         if (result.status === 'success' && Array.isArray(result.transactions)) {
-          return result.transactions.map(normalizeTx);
+          return {
+            transactions: result.transactions.map(normalizeTx),
+            budgets: result.budgets || {}
+          };
         }
       } catch (e) {
         console.warn('Using local transactions fallback for Groceries.', e);
       }
-      return loadLocalTransactions();
+      return { transactions: loadLocalTransactions(), budgets: {} };
     }
 
     function isSameMonth(dateValue, ref = new Date()) {
@@ -187,8 +185,10 @@
     }
 
     async function render() {
-      const groceryBudget = Number(localStorage.getItem(GROCERY_BUDGET_KEY) || 0);
-      const allTx = await loadTransactions();
+      const { transactions: allTx, budgets } = await loadSheetData();
+
+      const groceryBudgetKey = Object.keys(budgets).find(k => k.toLowerCase() === 'groceries');
+      const groceryBudget = groceryBudgetKey ? Number(budgets[groceryBudgetKey]) || 0 : 0;
 
       const groceryTx = allTx.filter(t => (t.category || "").toLowerCase() === "groceries");
       const groceryMonthTx = groceryTx.filter(t => isSameMonth(t.date));
