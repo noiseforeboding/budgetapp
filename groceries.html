@@ -130,31 +130,12 @@
     </div>
   </div>
 
+  <script src="tx-utils.js"></script>
   <script>
     const TRANSACTIONS_KEY = "transactions";
-    const TRANSACTION_EDIT_KEY = "transactionEdits";
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyulEmg-gesuCE_5S4jeeOr0kXk2-YZmrTietxFd0mXyAW-NnAhVmBfoIioyr1Dex7rEg/exec";
 
     const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
-
-    function simpleHash(value) {
-      let hash = 0;
-      const str = String(value || '');
-      for (let i = 0; i < str.length; i += 1) {
-        hash = ((hash << 5) - hash + str.charCodeAt(i)) >>> 0;
-      }
-      return hash.toString(36);
-    }
-
-    function getTxSignature(tx) {
-      return [
-        String(tx.type || tx.Type || '').trim().toLowerCase(),
-        String(tx.amount ?? tx.Amount ?? '').trim().toLowerCase(),
-        String(tx.category || tx.Category || '').trim().toLowerCase(),
-        String(tx.date || tx.Date || '').trim().toLowerCase(),
-        String(tx.note || tx.Note || '').trim().toLowerCase()
-      ].join('|');
-    }
 
     function parseTxDate(value) {
       if (!value) return null;
@@ -166,36 +147,6 @@
 
       const d = new Date(s);
       return isNaN(d.getTime()) ? null : d;
-    }
-
-    function normalizeTx(raw) {
-      const type = String(raw.type ?? raw.Type ?? 'Expense').trim() || 'Expense';
-      const amount = Number(raw.amount ?? raw.Amount ?? 0);
-      const category = String(raw.category ?? raw.Category ?? '').trim();
-      const note = raw.note ?? raw.Note ?? '';
-      const date = raw.date ?? raw.Date ?? '';
-      return { type, amount, category, note, date };
-    }
-
-    function assignTransactionIds(list) {
-      const seen = new Map();
-      return list.map((raw) => {
-        const tx = normalizeTx(raw);
-        const signature = getTxSignature(tx);
-        const occurrence = (seen.get(signature) || 0) + 1;
-        seen.set(signature, occurrence);
-        return { ...tx, id: `tx-${simpleHash(signature)}-${occurrence}` };
-      });
-    }
-
-    function applyTransactionEdits(list) {
-      try {
-        const parsed = JSON.parse(localStorage.getItem(TRANSACTION_EDIT_KEY) || '{"edits":{}}');
-        const edits = parsed && typeof parsed === 'object' && parsed.edits && typeof parsed.edits === 'object' ? parsed.edits : {};
-        return list.map(tx => (edits[tx.id] ? { ...tx, ...edits[tx.id] } : tx));
-      } catch {
-        return list;
-      }
     }
 
     function loadLocalTransactions() {

@@ -281,6 +281,7 @@
     </section>
   </main>
 
+  <script src="tx-utils.js"></script>
   <script>
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyulEmg-gesuCE_5S4jeeOr0kXk2-YZmrTietxFd0mXyAW-NnAhVmBfoIioyr1Dex7rEg/exec";
 
@@ -295,67 +296,13 @@
     const submitBtn = document.getElementById('submit-btn');
     const cancelEditBtn = document.getElementById('cancel-edit-btn');
 
-    function simpleHash(value) {
-      let hash = 0;
-      const str = String(value || '');
-      for (let i = 0; i < str.length; i += 1) {
-        hash = ((hash << 5) - hash + str.charCodeAt(i)) >>> 0;
-      }
-      return hash.toString(36);
-    }
-
-    function getTxSignature(tx) {
-      return [
-        String(tx.type || tx.Type || '').trim().toLowerCase(),
-        String(tx.amount ?? tx.Amount ?? '').trim().toLowerCase(),
-        String(tx.category || tx.Category || '').trim().toLowerCase(),
-        String(tx.date || tx.Date || '').trim().toLowerCase(),
-        String(tx.note || tx.Note || '').trim().toLowerCase()
-      ].join('|');
-    }
-
-    function normalizeTx(raw) {
-      return {
-        type: String(raw.type || raw.Type || 'Expense').trim() || 'Expense',
-        amount: Number(raw.amount ?? raw.Amount ?? 0),
-        category: String(raw.category || raw.Category || '').trim(),
-        date: String(raw.date || raw.Date || '').trim(),
-        note: String(raw.note || raw.Note || '').trim()
-      };
-    }
-
-    function assignTransactionIds(list) {
-      const seen = new Map();
-      return list.map((raw) => {
-        const tx = normalizeTx(raw);
-        const signature = getTxSignature(tx);
-        const occurrence = (seen.get(signature) || 0) + 1;
-        seen.set(signature, occurrence);
-        return {
-          ...tx,
-          id: `tx-${simpleHash(signature)}-${occurrence}`
-        };
-      });
-    }
-
-    function loadTransactionState() {
-      try {
-        const parsed = JSON.parse(localStorage.getItem('transactionEdits') || '{"edits":{}}');
-        return {
-          edits: parsed && typeof parsed === 'object' && parsed.edits && typeof parsed.edits === 'object' ? parsed.edits : {}
-        };
-      } catch {
-        return { edits: {} };
-      }
-    }
-
-    function saveTransactionState(state) {
-      localStorage.setItem('transactionEdits', JSON.stringify(state));
-    }
-
-    function applyTransactionEdits(list) {
-      const { edits } = loadTransactionState();
-      return list.map(tx => (edits[tx.id] ? { ...tx, ...edits[tx.id] } : tx));
+    function escapeHTML(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     function showStatus(text, duration = 3000) {
@@ -430,6 +377,8 @@
 
     document.getElementById('tx-form').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const wasEditing = Boolean(editingTransactionId);
+      let saveSucceeded = false;
       submitBtn.disabled = true;
       submitBtn.textContent = editingTransactionId ? 'Updating...' : 'Saving...';
 
@@ -453,14 +402,14 @@
             state.edits[current.id] = { type: updated.type, amount: updated.amount, category: updated.category, date: updated.date, note: updated.note };
             saveTransactionState(state);
 
-            if (sheetTransactions.some(t => t.id === current.id)) {
-              const sheetIdx = sheetTransactions.findIndex(t => t.id === current.id);
-              sheetTransactions[sheetIdx] = updated;
-            }
             showStatus("✅ Updated transaction");
+            saveSucceeded = true;
+          } else {
+            alert('Could not find the transaction to update. Please refresh and try again.');
+            cancelEdit();
+            return;
           }
         } else {
-          const newEntry = { ...entry, id: `local-${Date.now()}` };
           await fetch(SCRIPT_URL, {
             method: 'POST',
             mode: 'no-cors',
@@ -468,20 +417,28 @@
             body: JSON.stringify(entry)
           });
 
+          const newEntrySignature = getTxSignature(entry);
+          const newEntryOccurrence = sheetTransactions.reduce((count, tx) => count + (getTxSignature(tx) === newEntrySignature ? 1 : 0), 0) + 1;
+          const newEntry = { ...entry, id: `tx-${simpleHash(newEntrySignature)}-${newEntryOccurrence}` };
           transactions.push(newEntry);
+          sheetTransactions.push(newEntry);
           showStatus("✅ Saved to Google Sheet!");
+          saveSucceeded = true;
         }
 
         e.target.reset();
         document.getElementById('tx-date').valueAsDate = new Date();
         renderDashboard();
         renderTransactionLog();
-        cancelEdit();
       } catch (err) {
         alert('Failed to save transaction. Please check your connection.');
       } finally {
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Save Entry';
+        if (wasEditing && saveSucceeded) {
+          cancelEdit();
+        } else {
+          submitBtn.textContent = editingTransactionId ? 'Update Entry' : 'Save Entry';
+        }
       }
     });
 
@@ -567,7 +524,7 @@
       if (!body) return;
 
       const ordered = [...transactions].sort((a, b) => {
-        const dateDiff = (parseTxDate(b.date || b.Date)?.getTime() || 0) - (parseTxDate(a.date || a.Date)?.getTime() || 0);
+        const dateDiff = (parseTxDate(b.date)?.getTime() || 0) - (parseTxDate(a.date)?.getTime() || 0);
         if (dateDiff !== 0) return dateDiff;
         return String(b.id || '').localeCompare(String(a.id || ''));
       });
@@ -579,18 +536,22 @@
 
       body.innerHTML = ordered.map(tx => `
         <tr>
-          <td>${tx.date || '-'}</td>
-          <td>${tx.type || '-'}</td>
-          <td>${tx.category || '-'}</td>
-          <td>${tx.note || '-'}</td>
+          <td>${escapeHTML(tx.date || '-')}</td>
+          <td>${escapeHTML(tx.type || '-')}</td>
+          <td>${escapeHTML(tx.category || '-')}</td>
+          <td>${escapeHTML(tx.note || '-')}</td>
           <td>$${Number(tx.amount || 0).toFixed(2)}</td>
           <td>
             <div class="log-actions">
-              <button type="button" onclick="startEditTransaction('${tx.id}')">Edit</button>
+              <button type="button" class="edit-transaction-btn" data-transaction-id="${escapeHTML(tx.id)}">Edit</button>
             </div>
           </td>
         </tr>
       `).join('');
+
+      body.querySelectorAll('.edit-transaction-btn').forEach(btn => {
+        btn.addEventListener('click', () => startEditTransaction(btn.dataset.transactionId));
+      });
     }
 
     function startEditTransaction(id) {
