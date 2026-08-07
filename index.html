@@ -82,6 +82,43 @@
       cursor: pointer;
     }
     .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn.secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .form-actions { display: flex; gap: 0.75rem; }
+    .form-actions .btn { width: auto; flex: 1; }
+
+    .log-table-wrap { overflow-x: auto; }
+    .log-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+    .log-table th, .log-table td {
+      text-align: left;
+      padding: 0.75rem 0.6rem;
+      border-bottom: 1px solid #243042;
+      vertical-align: top;
+    }
+    .log-table th { color: #cbd5e1; white-space: nowrap; }
+    .log-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .log-actions button {
+      background: transparent;
+      color: var(--primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.35rem 0.6rem;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .log-actions button:hover { border-color: var(--primary); }
 
     .metrics-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem; }
     .metric-card { background: rgba(17,24,39,0.9); padding: 1rem; border-radius: 12px; border: 1px solid var(--border); text-align: center; }
@@ -155,7 +192,6 @@
   <nav>
     <button id="nav-log" class="active" onclick="switchView('log')">Log Transaction</button>
     <button id="nav-dash" onclick="switchView('dash')">This Month</button>
-    <button onclick="goToThisWeek()">This Week</button>
     <button onclick="goToGroceries()">Groceries</button>
   </nav>
 
@@ -194,8 +230,30 @@
           <input type="text" id="tx-note" placeholder="e.g. Shoppers - protein powder" />
         </div>
 
-        <button type="submit" id="submit-btn" class="btn">Save Entry</button>
+        <div class="form-actions">
+          <button type="submit" id="submit-btn" class="btn">Save Entry</button>
+          <button type="button" id="cancel-edit-btn" class="btn secondary hidden">Cancel Edit</button>
+        </div>
       </form>
+
+      <section class="card">
+        <h2>Transaction Log</h2>
+        <div class="log-table-wrap">
+          <table class="log-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Category</th>
+                <th>Note</th>
+                <th>Amount</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="transaction-log-body"></tbody>
+          </table>
+        </div>
+      </section>
     </section>
 
     <section id="view-dashboard" class="hidden">
@@ -223,6 +281,7 @@
     </section>
   </main>
 
+  <script src="tx-utils.js"></script>
   <script>
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyulEmg-gesuCE_5S4jeeOr0kXk2-YZmrTietxFd0mXyAW-NnAhVmBfoIioyr1Dex7rEg/exec";
 
@@ -230,8 +289,21 @@
 
     let budgets = {};
     let transactions = [];
+    let editingTransactionId = null;
+    let sheetTransactions = [];
 
     const statusMsg = document.getElementById('status-msg');
+    const submitBtn = document.getElementById('submit-btn');
+    const cancelEditBtn = document.getElementById('cancel-edit-btn');
+
+    function escapeHTML(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
 
     function showStatus(text, duration = 3000) {
       statusMsg.textContent = text;
@@ -252,10 +324,12 @@
         const result = await response.json();
 
         if (result.status === 'success') {
-          transactions = result.transactions || [];
+          sheetTransactions = assignTransactionIds(result.transactions || []);
+          transactions = applyTransactionEdits(sheetTransactions);
           budgets = result.budgets || {};
           populateCategoryDropdown();
           renderDashboard();
+          renderTransactionLog();
           showStatus("✅ Synced with Google Sheets");
         } else {
           showStatus(`❌ ${result.message || 'Error reading sheet data'}`, 5000);
@@ -303,36 +377,68 @@
 
     document.getElementById('tx-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const btn = document.getElementById('submit-btn');
-      btn.disabled = true;
-      btn.textContent = 'Saving...';
+      const wasEditing = Boolean(editingTransactionId);
+      let saveSucceeded = false;
+      submitBtn.disabled = true;
+      submitBtn.textContent = editingTransactionId ? 'Updating...' : 'Saving...';
 
-      const entry = {
+      const entry = normalizeTx({
         type: document.getElementById('tx-type').value,
         amount: parseFloat(document.getElementById('tx-amount').value),
         category: document.getElementById('tx-category').value,
         date: document.getElementById('tx-date').value,
         note: document.getElementById('tx-note').value
-      };
+      });
 
       try {
-        await fetch(SCRIPT_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(entry)
-        });
+        if (editingTransactionId) {
+          const idx = transactions.findIndex(t => t.id === editingTransactionId);
+          if (idx !== -1) {
+            const current = transactions[idx];
+            const updated = { ...current, ...entry, id: current.id };
+            transactions[idx] = updated;
 
-        transactions.push(entry);
-        showStatus("✅ Saved to Google Sheet!");
+            const state = loadTransactionState();
+            state.edits[current.id] = { type: updated.type, amount: updated.amount, category: updated.category, date: updated.date, note: updated.note };
+            saveTransactionState(state);
+
+            showStatus("✅ Updated transaction");
+            saveSucceeded = true;
+          } else {
+            alert('Could not find the transaction to update. Please refresh and try again.');
+            cancelEdit();
+            return;
+          }
+        } else {
+          await fetch(SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(entry)
+          });
+
+          const newEntrySignature = getTxSignature(entry);
+          const newEntryOccurrence = sheetTransactions.reduce((count, tx) => count + (getTxSignature(tx) === newEntrySignature ? 1 : 0), 0) + 1;
+          const newEntry = { ...entry, id: `tx-${simpleHash(newEntrySignature)}-${newEntryOccurrence}` };
+          transactions.push(newEntry);
+          sheetTransactions.push(newEntry);
+          showStatus("✅ Saved to Google Sheet!");
+          saveSucceeded = true;
+        }
+
         e.target.reset();
         document.getElementById('tx-date').valueAsDate = new Date();
         renderDashboard();
+        renderTransactionLog();
       } catch (err) {
         alert('Failed to save transaction. Please check your connection.');
       } finally {
-        btn.disabled = false;
-        btn.textContent = 'Save Entry';
+        submitBtn.disabled = false;
+        if (wasEditing && saveSucceeded) {
+          cancelEdit();
+        } else {
+          submitBtn.textContent = editingTransactionId ? 'Update Entry' : 'Save Entry';
+        }
       }
     });
 
@@ -413,6 +519,72 @@
       });
     }
 
+    function renderTransactionLog() {
+      const body = document.getElementById('transaction-log-body');
+      if (!body) return;
+
+      const ordered = [...transactions].sort((a, b) => {
+        const dateDiff = (parseTxDate(b.date)?.getTime() || 0) - (parseTxDate(a.date)?.getTime() || 0);
+        if (dateDiff !== 0) return dateDiff;
+        return String(b.id || '').localeCompare(String(a.id || ''));
+      });
+
+      if (ordered.length === 0) {
+        body.innerHTML = '<tr><td colspan="6" style="color: var(--text-muted);">No transactions yet.</td></tr>';
+        return;
+      }
+
+      body.innerHTML = ordered.map(tx => `
+        <tr>
+          <td>${escapeHTML(tx.date || '-')}</td>
+          <td>${escapeHTML(tx.type || '-')}</td>
+          <td>${escapeHTML(tx.category || '-')}</td>
+          <td>${escapeHTML(tx.note || '-')}</td>
+          <td>$${Number(tx.amount || 0).toFixed(2)}</td>
+          <td>
+            <div class="log-actions">
+              <button type="button" class="edit-transaction-btn" data-transaction-id="${escapeHTML(tx.id)}">Edit</button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+
+      body.querySelectorAll('.edit-transaction-btn').forEach(btn => {
+        btn.addEventListener('click', () => startEditTransaction(btn.dataset.transactionId));
+      });
+    }
+
+    function startEditTransaction(id) {
+      const tx = transactions.find(item => item.id === id);
+      if (!tx) return;
+
+      editingTransactionId = id;
+      document.getElementById('tx-type').value = tx.type || 'Expense';
+      document.getElementById('tx-amount').value = tx.amount ?? '';
+      const categorySelect = document.getElementById('tx-category');
+      if (tx.category && !Array.from(categorySelect.options).some(opt => opt.value === tx.category)) {
+        const opt = document.createElement('option');
+        opt.value = tx.category;
+        opt.textContent = tx.category;
+        categorySelect.appendChild(opt);
+      }
+      categorySelect.value = tx.category || '';
+      document.getElementById('tx-date').value = tx.date || '';
+      document.getElementById('tx-note').value = tx.note || '';
+      submitBtn.textContent = 'Update Entry';
+      cancelEditBtn.classList.remove('hidden');
+      showStatus('Editing transaction', 2000);
+      document.getElementById('tx-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function cancelEdit() {
+      editingTransactionId = null;
+      submitBtn.textContent = 'Save Entry';
+      cancelEditBtn.classList.add('hidden');
+      document.getElementById('tx-form').reset();
+      document.getElementById('tx-date').valueAsDate = new Date();
+    }
+
     function switchView(view) {
       const logSec = document.getElementById('view-log');
       const dashSec = document.getElementById('view-dashboard');
@@ -436,13 +608,11 @@
       }
     }
 
-    function goToThisWeek() {
-      window.location.href = 'this-week.html';
-    }
-
     function goToGroceries() {
       window.location.href = 'groceries.html';
     }
+
+    cancelEditBtn.addEventListener('click', cancelEdit);
 
     loadDataFromSheet();
   </script>

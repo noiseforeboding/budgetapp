@@ -119,6 +119,7 @@
     </div>
   </div>
 
+  <script src="tx-utils.js"></script>
   <script>
     const WEEKLY_BUDGET_KEY = "weeklyBudget";
     const TRANSACTIONS_KEY = "transactions";
@@ -159,14 +160,6 @@
       return isNaN(d.getTime()) ? null : d;
     }
 
-    function normalizeTx(raw) {
-      const amount = Number(raw.amount ?? raw.Amount ?? 0);
-      const category = String(raw.category ?? raw.Category ?? '').trim();
-      const note = raw.note ?? raw.Note ?? '';
-      const date = raw.date ?? raw.Date ?? '';
-      return { amount, category, note, date };
-    }
-
     function inRange(dateValue, start, end) {
       const d = parseTxDate(dateValue);
       if (!d) return false;
@@ -183,12 +176,12 @@
         const response = await fetch(SCRIPT_URL);
         const result = await response.json();
         if (result.status === 'success' && Array.isArray(result.transactions)) {
-          return result.transactions.map(normalizeTx);
+          return applyTransactionEdits(assignTransactionIds(result.transactions));
         }
       } catch (e) {
         console.warn('Using local transactions fallback for This Week.', e);
       }
-      return loadLocalTransactions();
+      return applyTransactionEdits(assignTransactionIds(loadLocalTransactions()));
     }
 
     async function render() {

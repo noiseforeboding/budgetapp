@@ -86,7 +86,6 @@
       <h1>Groceries</h1>
       <div class="nav">
         <a href="index.html">Home</a>
-        <a href="this-week.html">This Week</a>
       </div>
     </div>
 
@@ -131,6 +130,7 @@
     </div>
   </div>
 
+  <script src="tx-utils.js"></script>
   <script>
     const TRANSACTIONS_KEY = "transactions";
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyulEmg-gesuCE_5S4jeeOr0kXk2-YZmrTietxFd0mXyAW-NnAhVmBfoIioyr1Dex7rEg/exec";
@@ -149,14 +149,6 @@
       return isNaN(d.getTime()) ? null : d;
     }
 
-    function normalizeTx(raw) {
-      const amount = Number(raw.amount ?? raw.Amount ?? 0);
-      const category = String(raw.category ?? raw.Category ?? '').trim();
-      const note = raw.note ?? raw.Note ?? '';
-      const date = raw.date ?? raw.Date ?? '';
-      return { amount, category, note, date };
-    }
-
     function loadLocalTransactions() {
       try { return JSON.parse(localStorage.getItem(TRANSACTIONS_KEY) || "[]").map(normalizeTx); }
       catch { return []; }
@@ -168,14 +160,14 @@
         const result = await response.json();
         if (result.status === 'success' && Array.isArray(result.transactions)) {
           return {
-            transactions: result.transactions.map(normalizeTx),
+            transactions: applyTransactionEdits(assignTransactionIds(result.transactions)),
             budgets: result.budgets || {}
           };
         }
       } catch (e) {
         console.warn('Using local transactions fallback for Groceries.', e);
       }
-      return { transactions: loadLocalTransactions(), budgets: {} };
+      return { transactions: applyTransactionEdits(assignTransactionIds(loadLocalTransactions())), budgets: {} };
     }
 
     function isSameMonth(dateValue, ref = new Date()) {
