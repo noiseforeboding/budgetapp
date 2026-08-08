@@ -441,17 +441,25 @@
     }
 
     function assignDisplayOrders(list) {
-      const items = assignTransactionIds(list);
+      const items = assignTransactionIds(list).map((tx, sourceIndex) => ({
+        ...tx,
+        sourceIndex
+      }));
       if (items.length === 0) return [];
 
-      const firstDate = parseTxDate(items[0].date)?.getTime();
-      const lastDate = parseTxDate(items[items.length - 1].date)?.getTime();
-      const newestFirst = Number.isFinite(firstDate) && Number.isFinite(lastDate) && firstDate > lastDate;
+      items.sort((a, b) => {
+        const dateDiff = (parseTxDate(b.date)?.getTime() || 0) - (parseTxDate(a.date)?.getTime() || 0);
+        if (dateDiff !== 0) return dateDiff;
+        return b.sourceIndex - a.sourceIndex;
+      });
 
-      return items.map((tx, index) => ({
-        ...tx,
-        logOrder: newestFirst ? items.length - index : index
-      }));
+      return items.map((tx, index) => {
+        const { sourceIndex, ...rest } = tx;
+        return {
+          ...rest,
+          logOrder: items.length - index
+        };
+      });
     }
 
     function nextLogOrder(list) {
