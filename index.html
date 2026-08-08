@@ -81,6 +81,9 @@
       font-weight: 700;
       cursor: pointer;
     }
+    #submit-btn {
+      box-shadow: 0 10px 24px rgba(96, 165, 250, 0.25);
+    }
     .btn:disabled { opacity: 0.6; cursor: not-allowed; }
     .btn.secondary {
       background: transparent;
@@ -179,6 +182,24 @@
 
     @media (max-width: 640px) {
       .metrics-grid { grid-template-columns: 1fr; }
+      .form-actions {
+        flex-direction: column;
+      }
+      .form-actions .btn {
+        width: 100%;
+      }
+      #submit-btn {
+        position: sticky;
+        bottom: 0.75rem;
+        z-index: 1;
+        background: linear-gradient(180deg, #93c5fd, var(--primary));
+        box-shadow: 0 14px 28px rgba(96, 165, 250, 0.35);
+        padding: 1rem;
+        font-size: 1.05rem;
+      }
+      #cancel-edit-btn {
+        background: rgba(17, 24, 39, 0.95);
+      }
     }
   </style>
 </head>
@@ -523,11 +544,14 @@
       const body = document.getElementById('transaction-log-body');
       if (!body) return;
 
-      const ordered = [...transactions].sort((a, b) => {
-        const dateDiff = (parseTxDate(b.date)?.getTime() || 0) - (parseTxDate(a.date)?.getTime() || 0);
-        if (dateDiff !== 0) return dateDiff;
-        return String(b.id || '').localeCompare(String(a.id || ''));
-      });
+      const ordered = transactions
+        .map((tx, index) => ({ tx, index }))
+        .sort((a, b) => {
+          const dateDiff = (parseTxDate(b.tx.date)?.getTime() || 0) - (parseTxDate(a.tx.date)?.getTime() || 0);
+          if (dateDiff !== 0) return dateDiff;
+          return b.index - a.index;
+        })
+        .map(({ tx }) => tx);
 
       if (ordered.length === 0) {
         body.innerHTML = '<tr><td colspan="6" style="color: var(--text-muted);">No transactions yet.</td></tr>';
