@@ -451,6 +451,7 @@
         const bTime = parseTxDate(b.date)?.getTime();
         const aSort = Number.isFinite(aTime) ? aTime : Number.NEGATIVE_INFINITY;
         const bSort = Number.isFinite(bTime) ? bTime : Number.NEGATIVE_INFINITY;
+        // Prefer newer dates first; for ties, keep dated rows newest-by-source and undated rows stable.
         if (bSort !== aSort) return bSort - aSort;
         if (Number.isFinite(aSort)) return b.sourceIndex - a.sourceIndex;
         return a.sourceIndex - b.sourceIndex;
