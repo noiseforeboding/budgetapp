@@ -452,6 +452,7 @@
         const aSort = Number.isFinite(aTime) ? aTime : Number.NEGATIVE_INFINITY;
         const bSort = Number.isFinite(bTime) ? bTime : Number.NEGATIVE_INFINITY;
         if (bSort !== aSort) return bSort - aSort;
+        if (Number.isFinite(aSort)) return b.sourceIndex - a.sourceIndex;
         return a.sourceIndex - b.sourceIndex;
       });
 
@@ -465,9 +466,10 @@
     }
 
     function ensureDisplayOrders(list) {
-      return list.map((tx, index) => ({
+      let nextOrder = list.reduce((max, tx) => Math.max(max, Number(tx.logOrder)), 0) + 1;
+      return list.map((tx) => ({
         ...tx,
-        logOrder: Number.isFinite(Number(tx.logOrder)) ? Number(tx.logOrder) : index + 1
+        logOrder: Number.isFinite(Number(tx.logOrder)) ? Number(tx.logOrder) : nextOrder++
       }));
     }
 
