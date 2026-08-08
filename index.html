@@ -551,14 +551,11 @@
       const body = document.getElementById('transaction-log-body');
       if (!body) return;
 
-      const ordered = transactions
-        .map((tx, index) => ({ tx, index }))
-        .sort((a, b) => {
-          const dateDiff = (parseTxDate(b.tx.date)?.getTime() || 0) - (parseTxDate(a.tx.date)?.getTime() || 0);
-          if (dateDiff !== 0) return dateDiff;
-          return (b.tx.logOrder ?? b.index) - (a.tx.logOrder ?? a.index);
-        })
-        .map(({ tx }) => tx);
+      const ordered = [...transactions].sort((a, b) => {
+        const dateDiff = (parseTxDate(b.date)?.getTime() || 0) - (parseTxDate(a.date)?.getTime() || 0);
+        if (dateDiff !== 0) return dateDiff;
+        return (b.logOrder ?? 0) - (a.logOrder ?? 0);
+      });
 
       if (ordered.length === 0) {
         body.innerHTML = '<tr><td colspan="6" style="color: var(--text-muted);">No transactions yet.</td></tr>';
