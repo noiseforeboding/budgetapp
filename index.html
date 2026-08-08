@@ -81,6 +81,9 @@
       font-weight: 700;
       cursor: pointer;
     }
+    #submit-btn {
+      box-shadow: 0 10px 24px rgba(96, 165, 250, 0.25);
+    }
     .btn:disabled { opacity: 0.6; cursor: not-allowed; }
     .btn.secondary {
       background: transparent;
@@ -179,6 +182,67 @@
 
     @media (max-width: 640px) {
       .metrics-grid { grid-template-columns: 1fr; }
+      .form-actions {
+        flex-direction: column;
+      }
+      .form-actions .btn {
+        width: 100%;
+      }
+      #submit-btn {
+        position: sticky;
+        bottom: 0.75rem;
+        z-index: 1;
+        background: linear-gradient(180deg, #93c5fd, var(--primary));
+        box-shadow: 0 14px 28px rgba(96, 165, 250, 0.35);
+        padding: 1rem;
+        font-size: 1.05rem;
+      }
+      #cancel-edit-btn {
+        background: rgba(17, 24, 39, 0.95);
+      }
+      .log-table-wrap {
+        overflow: visible;
+      }
+      .log-table thead {
+        display: none;
+      }
+      .log-table,
+      .log-table tbody,
+      .log-table tr {
+        display: block;
+        width: 100%;
+      }
+      .log-table tr {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        margin-bottom: 0.75rem;
+        overflow: hidden;
+        background: rgba(11, 18, 32, 0.6);
+      }
+      .log-table td {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.7rem 0.75rem;
+        border-bottom: 1px solid #243042;
+      }
+      .log-table td:last-child {
+        border-bottom: none;
+      }
+      .log-table td::before {
+        content: attr(data-label);
+        color: var(--text-muted);
+        font-weight: 600;
+        flex: 0 0 40%;
+      }
+      .log-actions {
+        justify-content: flex-end;
+        width: 100%;
+      }
+      .log-actions button {
+        flex: 1;
+        min-height: 2.5rem;
+      }
     }
   </style>
 </head>
@@ -324,8 +388,8 @@
         const result = await response.json();
 
         if (result.status === 'success') {
-          sheetTransactions = assignTransactionIds(result.transactions || []);
-          transactions = applyTransactionEdits(sheetTransactions);
+          sheetTransactions = assignDisplayOrders(result.transactions || []);
+          transactions = ensureDisplayOrders(applyTransactionEdits(sheetTransactions));
           budgets = result.budgets || {};
           populateCategoryDropdown();
           renderDashboard();
@@ -375,6 +439,47 @@
       return isNaN(d.getTime()) ? null : d;
     }
 
+    function assignDisplayOrders(list) {
+      const items = assignTransactionIds(list).map((tx, sourceIndex) => ({
+        ...tx,
+        sourceIndex
+      }));
+      if (items.length === 0) return [];
+
+      items.sort((a, b) => {
+        const aTime = parseTxDate(a.date)?.getTime();
+        const bTime = parseTxDate(b.date)?.getTime();
+        const aSort = Number.isFinite(aTime) ? aTime : Number.NEGATIVE_INFINITY;
+        const bSort = Number.isFinite(bTime) ? bTime : Number.NEGATIVE_INFINITY;
+        // Prefer newer dates first; for ties, keep dated rows newest-by-source and undated rows stable.
+        if (bSort !== aSort) return bSort - aSort;
+        if (Number.isFinite(aSort)) return b.sourceIndex - a.sourceIndex;
+        return a.sourceIndex - b.sourceIndex;
+      });
+
+      return items.map((tx, index) => {
+        const { sourceIndex, ...rest } = tx;
+        return {
+          ...rest,
+          logOrder: items.length - index
+        };
+      });
+    }
+
+    function ensureDisplayOrders(list) {
+      let fallbackOrder = 0;
+      return list.map((tx) => ({
+        ...tx,
+        logOrder: Number.isFinite(Number(tx.logOrder)) && Number(tx.logOrder) > 0
+          ? Number(tx.logOrder)
+          : fallbackOrder--
+      }));
+    }
+
+    function nextLogOrder(list) {
+      return list.reduce((max, tx) => Math.max(max, Number(tx.logOrder)), 0) + 1;
+    }
+
     document.getElementById('tx-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const wasEditing = Boolean(editingTransactionId);
@@ -419,7 +524,11 @@
 
           const newEntrySignature = getTxSignature(entry);
           const newEntryOccurrence = sheetTransactions.reduce((count, tx) => count + (getTxSignature(tx) === newEntrySignature ? 1 : 0), 0) + 1;
-          const newEntry = { ...entry, id: `tx-${simpleHash(newEntrySignature)}-${newEntryOccurrence}` };
+          const newEntry = {
+            ...entry,
+            id: `tx-${simpleHash(newEntrySignature)}-${newEntryOccurrence}`,
+            logOrder: nextLogOrder(sheetTransactions)
+          };
           transactions.push(newEntry);
           sheetTransactions.push(newEntry);
           showStatus("✅ Saved to Google Sheet!");
@@ -523,10 +632,8 @@
       const body = document.getElementById('transaction-log-body');
       if (!body) return;
 
-      const ordered = [...transactions].sort((a, b) => {
-        const dateDiff = (parseTxDate(b.date)?.getTime() || 0) - (parseTxDate(a.date)?.getTime() || 0);
-        if (dateDiff !== 0) return dateDiff;
-        return String(b.id || '').localeCompare(String(a.id || ''));
+      const ordered = ensureDisplayOrders(transactions).sort((a, b) => {
+        return b.logOrder - a.logOrder;
       });
 
       if (ordered.length === 0) {
@@ -536,12 +643,12 @@
 
       body.innerHTML = ordered.map(tx => `
         <tr>
-          <td>${escapeHTML(tx.date || '-')}</td>
-          <td>${escapeHTML(tx.type || '-')}</td>
-          <td>${escapeHTML(tx.category || '-')}</td>
-          <td>${escapeHTML(tx.note || '-')}</td>
-          <td>$${Number(tx.amount || 0).toFixed(2)}</td>
-          <td>
+          <td data-label="Date">${escapeHTML(tx.date || '-')}</td>
+          <td data-label="Type">${escapeHTML(tx.type || '-')}</td>
+          <td data-label="Category">${escapeHTML(tx.category || '-')}</td>
+          <td data-label="Note">${escapeHTML(tx.note || '-')}</td>
+          <td data-label="Amount">$${Number(tx.amount || 0).toFixed(2)}</td>
+          <td data-label="Actions">
             <div class="log-actions">
               <button type="button" class="edit-transaction-btn" data-transaction-id="${escapeHTML(tx.id)}">Edit</button>
             </div>
