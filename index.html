@@ -200,6 +200,50 @@
       #cancel-edit-btn {
         background: rgba(17, 24, 39, 0.95);
       }
+      .log-table-wrap {
+        overflow: visible;
+      }
+      .log-table thead {
+        display: none;
+      }
+      .log-table,
+      .log-table tbody,
+      .log-table tr,
+      .log-table td {
+        display: block;
+        width: 100%;
+      }
+      .log-table tr {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        margin-bottom: 0.75rem;
+        overflow: hidden;
+        background: rgba(11, 18, 32, 0.6);
+      }
+      .log-table td {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.7rem 0.75rem;
+        border-bottom: 1px solid #243042;
+      }
+      .log-table td:last-child {
+        border-bottom: none;
+      }
+      .log-table td::before {
+        content: attr(data-label);
+        color: var(--text-muted);
+        font-weight: 600;
+        flex: 0 0 40%;
+      }
+      .log-actions {
+        justify-content: flex-end;
+        width: 100%;
+      }
+      .log-actions button {
+        flex: 1;
+        min-height: 2.5rem;
+      }
     }
   </style>
 </head>
@@ -552,8 +596,6 @@
       if (!body) return;
 
       const ordered = [...transactions].sort((a, b) => {
-        const dateDiff = (parseTxDate(b.date)?.getTime() || 0) - (parseTxDate(a.date)?.getTime() || 0);
-        if (dateDiff !== 0) return dateDiff;
         return (b.logOrder ?? 0) - (a.logOrder ?? 0);
       });
 
@@ -564,12 +606,12 @@
 
       body.innerHTML = ordered.map(tx => `
         <tr>
-          <td>${escapeHTML(tx.date || '-')}</td>
-          <td>${escapeHTML(tx.type || '-')}</td>
-          <td>${escapeHTML(tx.category || '-')}</td>
-          <td>${escapeHTML(tx.note || '-')}</td>
-          <td>$${Number(tx.amount || 0).toFixed(2)}</td>
-          <td>
+          <td data-label="Date">${escapeHTML(tx.date || '-')}</td>
+          <td data-label="Type">${escapeHTML(tx.type || '-')}</td>
+          <td data-label="Category">${escapeHTML(tx.category || '-')}</td>
+          <td data-label="Note">${escapeHTML(tx.note || '-')}</td>
+          <td data-label="Amount">$${Number(tx.amount || 0).toFixed(2)}</td>
+          <td data-label="Actions">
             <div class="log-actions">
               <button type="button" class="edit-transaction-btn" data-transaction-id="${escapeHTML(tx.id)}">Edit</button>
             </div>
