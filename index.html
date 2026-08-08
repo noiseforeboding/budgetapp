@@ -467,12 +467,12 @@
     }
 
     function ensureDisplayOrders(list) {
-      let nextOrder = list.reduce((max, tx) => Math.max(max, Number(tx.logOrder)), 0) + 1;
+      let fallbackOrder = 0;
       return list.map((tx) => ({
         ...tx,
         logOrder: Number.isFinite(Number(tx.logOrder)) && Number(tx.logOrder) > 0
           ? Number(tx.logOrder)
-          : nextOrder++
+          : fallbackOrder--
       }));
     }
 
