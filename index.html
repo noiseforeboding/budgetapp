@@ -390,7 +390,7 @@
 
         if (result.status === 'success') {
           sheetTransactions = assignDisplayOrders(result.transactions || []);
-          transactions = applyTransactionEdits(sheetTransactions);
+          transactions = ensureDisplayOrders(applyTransactionEdits(sheetTransactions));
           budgets = result.budgets || {};
           populateCategoryDropdown();
           renderDashboard();
@@ -448,8 +448,11 @@
       if (items.length === 0) return [];
 
       items.sort((a, b) => {
-        const dateDiff = (parseTxDate(b.date)?.getTime() || 0) - (parseTxDate(a.date)?.getTime() || 0);
-        if (dateDiff !== 0) return dateDiff;
+        const aTime = parseTxDate(a.date)?.getTime();
+        const bTime = parseTxDate(b.date)?.getTime();
+        const aSort = Number.isFinite(aTime) ? aTime : Number.NEGATIVE_INFINITY;
+        const bSort = Number.isFinite(bTime) ? bTime : Number.NEGATIVE_INFINITY;
+        if (bSort !== aSort) return bSort - aSort;
         return b.sourceIndex - a.sourceIndex;
       });
 
@@ -460,6 +463,13 @@
           logOrder: items.length - index
         };
       });
+    }
+
+    function ensureDisplayOrders(list) {
+      return list.map((tx, index) => ({
+        ...tx,
+        logOrder: Number.isFinite(Number(tx.logOrder)) ? Number(tx.logOrder) : index + 1
+      }));
     }
 
     function nextLogOrder(list) {
@@ -618,7 +628,7 @@
       const body = document.getElementById('transaction-log-body');
       if (!body) return;
 
-      const ordered = [...transactions].sort((a, b) => {
+      const ordered = ensureDisplayOrders(transactions).sort((a, b) => {
         return b.logOrder - a.logOrder;
       });
 
