@@ -452,7 +452,7 @@
         const aSort = Number.isFinite(aTime) ? aTime : Number.NEGATIVE_INFINITY;
         const bSort = Number.isFinite(bTime) ? bTime : Number.NEGATIVE_INFINITY;
         if (bSort !== aSort) return bSort - aSort;
-        return b.sourceIndex - a.sourceIndex;
+        return a.sourceIndex - b.sourceIndex;
       });
 
       return items.map((tx, index) => {
