@@ -345,7 +345,10 @@
         const result = await response.json();
 
         if (result.status === 'success') {
-          sheetTransactions = assignTransactionIds(result.transactions || []);
+          sheetTransactions = assignTransactionIds(result.transactions || []).map((tx, index) => ({
+            ...tx,
+            logOrder: index
+          }));
           transactions = applyTransactionEdits(sheetTransactions);
           budgets = result.budgets || {};
           populateCategoryDropdown();
@@ -440,7 +443,11 @@
 
           const newEntrySignature = getTxSignature(entry);
           const newEntryOccurrence = sheetTransactions.reduce((count, tx) => count + (getTxSignature(tx) === newEntrySignature ? 1 : 0), 0) + 1;
-          const newEntry = { ...entry, id: `tx-${simpleHash(newEntrySignature)}-${newEntryOccurrence}` };
+          const newEntry = {
+            ...entry,
+            id: `tx-${simpleHash(newEntrySignature)}-${newEntryOccurrence}`,
+            logOrder: sheetTransactions.length
+          };
           transactions.push(newEntry);
           sheetTransactions.push(newEntry);
           showStatus("✅ Saved to Google Sheet!");
@@ -549,7 +556,7 @@
         .sort((a, b) => {
           const dateDiff = (parseTxDate(b.tx.date)?.getTime() || 0) - (parseTxDate(a.tx.date)?.getTime() || 0);
           if (dateDiff !== 0) return dateDiff;
-          return b.index - a.index;
+          return (b.tx.logOrder ?? b.index) - (a.tx.logOrder ?? a.index);
         })
         .map(({ tx }) => tx);
 
