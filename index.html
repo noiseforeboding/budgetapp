@@ -389,10 +389,7 @@
         const result = await response.json();
 
         if (result.status === 'success') {
-          sheetTransactions = assignTransactionIds(result.transactions || []).map((tx, index) => ({
-            ...tx,
-            logOrder: index
-          }));
+          sheetTransactions = assignDisplayOrders(result.transactions || []);
           transactions = applyTransactionEdits(sheetTransactions);
           budgets = result.budgets || {};
           populateCategoryDropdown();
@@ -443,6 +440,24 @@
       return isNaN(d.getTime()) ? null : d;
     }
 
+    function assignDisplayOrders(list) {
+      const items = assignTransactionIds(list);
+      if (items.length === 0) return [];
+
+      const firstDate = parseTxDate(items[0].date)?.getTime();
+      const lastDate = parseTxDate(items[items.length - 1].date)?.getTime();
+      const newestFirst = Number.isFinite(firstDate) && Number.isFinite(lastDate) && firstDate > lastDate;
+
+      return items.map((tx, index) => ({
+        ...tx,
+        logOrder: newestFirst ? items.length - index : index
+      }));
+    }
+
+    function nextLogOrder(list) {
+      return list.reduce((max, tx) => Math.max(max, Number(tx.logOrder)), 0) + 1;
+    }
+
     document.getElementById('tx-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const wasEditing = Boolean(editingTransactionId);
@@ -490,7 +505,7 @@
           const newEntry = {
             ...entry,
             id: `tx-${simpleHash(newEntrySignature)}-${newEntryOccurrence}`,
-            logOrder: sheetTransactions.length
+            logOrder: nextLogOrder(sheetTransactions)
           };
           transactions.push(newEntry);
           sheetTransactions.push(newEntry);
@@ -596,7 +611,7 @@
       if (!body) return;
 
       const ordered = [...transactions].sort((a, b) => {
-        return (b.logOrder ?? 0) - (a.logOrder ?? 0);
+        return b.logOrder - a.logOrder;
       });
 
       if (ordered.length === 0) {
