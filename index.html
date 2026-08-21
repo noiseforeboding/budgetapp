@@ -580,7 +580,7 @@
       let incomeSum = 0;
       const catTotals = {};
 
-      Object.keys(budgets).forEach(cat => catTotals[cat] = 0);
+      Object.keys(budgets).forEach(cat => catTotals[cat.toLowerCase()] = 0);
 
       transactions.forEach((t) => {
         const d = parseTxDate(t.date || t.Date);
@@ -595,7 +595,7 @@
 
         if (type === 'Expense') {
           spentSum += amount;
-          if (catTotals[category] !== undefined) catTotals[category] += amount;
+          if (catTotals[category.toLowerCase()] !== undefined) catTotals[category.toLowerCase()] += amount;
         } else if (type === 'Income') {
           incomeSum += amount;
         }
@@ -628,7 +628,7 @@
       }
 
       Object.entries(budgets).forEach(([cat, budget]) => {
-        const spent = catTotals[cat] || 0;
+        const spent = catTotals[cat.toLowerCase()] || 0;
         const b = Number(budget) || 0;
         const percent = b > 0 ? Math.min((spent / b) * 100, 100) : 0;
         const isOver = spent > b && b > 0;
