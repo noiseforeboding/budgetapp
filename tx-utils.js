@@ -21,13 +21,31 @@ function getTxSignature(tx) {
   ].join('|');
 }
 
+function getMonthLabel(dateValue) {
+  if (!dateValue) return '';
+
+  let date = dateValue instanceof Date ? dateValue : null;
+  if (!date) {
+    const value = String(dateValue).trim();
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    date = match
+      ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+      : new Date(value);
+  }
+  if (Number.isNaN(date.getTime())) return '';
+
+  return date.toLocaleString('en', { month: 'long' });
+}
+
 function normalizeTx(raw) {
+  const date = String(raw.date || raw.Date || '').trim();
   return {
     type: String(raw.type || raw.Type || 'Expense').trim() || 'Expense',
     amount: Number(raw.amount ?? raw.Amount ?? 0),
     category: String(raw.category || raw.Category || '').trim(),
-    date: String(raw.date || raw.Date || '').trim(),
-    note: String(raw.note || raw.Note || '').trim()
+    date,
+    note: String(raw.note || raw.Note || '').trim(),
+    month: String(raw.month || raw.Month || '').trim() || getMonthLabel(date)
   };
 }
 
